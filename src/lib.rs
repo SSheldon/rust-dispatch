@@ -61,6 +61,13 @@ impl Queue {
             result
         }
     }
+
+    pub fn async<F>(&self, work: F) where F: 'static + Send + FnOnce() {
+        let (context, work) = context_and_function(work);
+        unsafe {
+            dispatch_async_f(self.ptr, context, work);
+        }
+    }
 }
 
 impl Drop for Queue {
@@ -79,9 +86,27 @@ mod tests {
     fn test_serial_queue() {
         let q = Queue::create(None, QueueAttribute::Serial);
         let mut num = 0;
+
         q.sync(|| num = 1);
         assert!(num == 1);
 
         assert!(q.sync(|| num) == 1);
+    }
+
+    #[test]
+    fn test_serial_queue_async() {
+        let q = Queue::create(None, QueueAttribute::Serial);
+        let mut num = 0;
+
+        // Create a pointer we can send to our async block
+        struct SendPtr(*mut i32);
+        unsafe impl Send for SendPtr { }
+        let num_ptr = SendPtr(&mut num);
+
+        q.async(move || unsafe { *num_ptr.0 = 1 });
+
+        // Sync an empty block to ensure the async one finishes
+        q.sync(|| ());
+        assert!(num == 1);
     }
 }
