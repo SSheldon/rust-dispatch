@@ -33,6 +33,9 @@ extern {
     pub fn dispatch_release(object: dispatch_object_t);
 }
 
+pub const DISPATCH_QUEUE_SERIAL: dispatch_queue_attr_t = 0 as dispatch_queue_attr_t;
+pub static DISPATCH_QUEUE_CONCURRENT: dispatch_queue_attr_t = &_dispatch_queue_attr_concurrent;
+
 #[cfg(test)]
 mod tests {
     use std::ptr;
@@ -50,7 +53,7 @@ mod tests {
         let mut num: u32 = 0;
         let num_ptr: *mut u32 = &mut num;
         unsafe {
-            let q = dispatch_queue_create(ptr::null(), ptr::null());
+            let q = dispatch_queue_create(ptr::null(), DISPATCH_QUEUE_SERIAL);
             dispatch_sync_f(q, num_ptr as *mut c_void, serial_queue_test_add);
             dispatch_release(q);
         }
