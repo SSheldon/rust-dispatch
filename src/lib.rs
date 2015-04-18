@@ -3,7 +3,7 @@ extern crate libc;
 use std::ffi::CString;
 use std::mem;
 use std::ptr;
-use libc::c_void;
+use libc::{c_void, size_t};
 
 use ffi::*;
 
@@ -40,6 +40,21 @@ fn context_and_function<F>(closure: F) -> (*mut c_void, dispatch_function_t)
     }
 }
 
+fn context_and_apply_function<F>(closure: &F) ->
+        (*mut c_void, extern fn(*mut c_void, size_t))
+        where F: Fn(usize) {
+    extern fn work_apply_closure<F>(context: &F, iter: size_t)
+            where F: Fn(usize) {
+        context(iter as usize);
+    }
+
+    let context: *const F = closure;
+    let func: extern fn(&F, size_t) = work_apply_closure::<F>;
+    unsafe {
+        (context as *mut c_void, mem::transmute(func))
+    }
+}
+
 impl Queue {
     pub fn create(label: Option<&str>, attr: QueueAttribute) -> Self {
         let label = label.map(|s| CString::new(s).unwrap());
@@ -66,6 +81,18 @@ impl Queue {
         let (context, work) = context_and_function(work);
         unsafe {
             dispatch_async_f(self.ptr, context, work);
+        }
+    }
+
+    pub fn apply<T, F>(&self, slice: &mut [T], work: F)
+            where F: Send + Sync + Fn(&mut T), T: Send {
+        let slice_ptr = slice.as_mut_ptr();
+        let work = move |i| unsafe {
+            work(&mut *slice_ptr.offset(i as isize));
+        };
+        let (context, work) = context_and_apply_function(&work);
+        unsafe {
+            dispatch_apply_f(slice.len() as size_t, self.ptr, context, work);
         }
     }
 }
@@ -108,5 +135,14 @@ mod tests {
         // Sync an empty block to ensure the async one finishes
         q.sync(|| ());
         assert!(num == 1);
+    }
+
+    #[test]
+    fn test_apply() {
+        let q = Queue::create(None, QueueAttribute::Serial);
+        let mut nums = [0, 1];
+
+        q.apply(&mut nums, |x| *x += 1);
+        assert!(nums == [1, 2]);
     }
 }

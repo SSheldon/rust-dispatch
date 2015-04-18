@@ -1,6 +1,6 @@
 #![allow(non_camel_case_types)]
 
-use libc::{c_char, c_long, c_ulong, c_void};
+use libc::{c_char, c_long, c_ulong, c_void, size_t};
 
 pub type dispatch_function_t = extern fn(*mut c_void);
 pub type dispatch_object_t = *mut ();
@@ -26,7 +26,7 @@ extern {
     // void dispatch_after ( dispatch_time_t when, dispatch_queue_t queue, dispatch_block_t block );
     // void dispatch_after_f ( dispatch_time_t when, dispatch_queue_t queue, void *context, dispatch_function_t work );
     // void dispatch_apply ( size_t iterations, dispatch_queue_t queue, void (^block)(size_t) );
-    // void dispatch_apply_f ( size_t iterations, dispatch_queue_t queue, void *context, void (*work)(void *, size_t) );
+    pub fn dispatch_apply_f(iterations: size_t, queue: dispatch_queue_t, context: *mut c_void, work: extern fn(*mut c_void, size_t));
     // void dispatch_once ( dispatch_once_t *predicate, dispatch_block_t block );
     // void dispatch_once_f ( dispatch_once_t *predicate, void *context, dispatch_function_t function );
 
