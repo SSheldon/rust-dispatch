@@ -9,9 +9,9 @@ pub type dispatch_queue_attr_t = *const ();
 
 #[link(name = "System", kind = "dylib")]
 extern {
+    static _dispatch_main_q: ();
     static _dispatch_queue_attr_concurrent: ();
 
-    pub fn dispatch_get_main_queue() -> dispatch_queue_t;
     pub fn dispatch_get_global_queue(identifier: c_long, flags: c_ulong) -> dispatch_queue_t;
     pub fn dispatch_queue_create(label: *const c_char, attr: dispatch_queue_attr_t) -> dispatch_queue_t;
     // dispatch_queue_attr_t dispatch_queue_attr_make_with_qos_class ( dispatch_queue_attr_t attr, dispatch_qos_class_t qos_class, int relative_priority );
@@ -46,6 +46,10 @@ extern {
     // void dispatch_set_context ( dispatch_object_t object, void *context );
     // void dispatch_set_finalizer_f ( dispatch_object_t object, dispatch_function_t finalizer );
     // void dispatch_suspend ( dispatch_object_t object );
+}
+
+pub fn dispatch_get_main_queue() -> dispatch_queue_t {
+    &_dispatch_main_q as *const _ as dispatch_queue_t
 }
 
 pub const DISPATCH_QUEUE_SERIAL: dispatch_queue_attr_t = 0 as dispatch_queue_attr_t;

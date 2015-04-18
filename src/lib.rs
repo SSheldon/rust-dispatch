@@ -56,6 +56,14 @@ fn context_and_apply_function<F>(closure: &F) ->
 }
 
 impl Queue {
+    pub fn main() -> Self {
+        let queue = dispatch_get_main_queue();
+        unsafe {
+            dispatch_retain(queue);
+        }
+        Queue { ptr: queue }
+    }
+
     pub fn create(label: Option<&str>, attr: QueueAttribute) -> Self {
         let label = label.map(|s| CString::new(s).unwrap());
         let label_ptr = label.map_or(ptr::null(), |s| s.as_ptr());
@@ -135,6 +143,13 @@ impl Drop for Queue {
             dispatch_release(self.ptr);
         }
     }
+}
+
+pub fn main() -> ! {
+    unsafe {
+        dispatch_main();
+    }
+    unreachable!();
 }
 
 #[cfg(test)]
