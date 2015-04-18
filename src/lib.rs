@@ -3,7 +3,7 @@ extern crate libc;
 use std::ffi::CString;
 use std::mem;
 use std::ptr;
-use libc::{c_void, size_t};
+use libc::{c_long, c_void, size_t};
 
 use ffi::*;
 
@@ -19,6 +19,24 @@ impl QueueAttribute {
         match *self {
             QueueAttribute::Serial => DISPATCH_QUEUE_SERIAL,
             QueueAttribute::Concurrent => DISPATCH_QUEUE_CONCURRENT,
+        }
+    }
+}
+
+pub enum QueuePriority {
+    High,
+    Default,
+    Low,
+    Background,
+}
+
+impl QueuePriority {
+    fn as_raw(&self) -> c_long {
+        match *self {
+            QueuePriority::High       => DISPATCH_QUEUE_PRIORITY_HIGH,
+            QueuePriority::Default    => DISPATCH_QUEUE_PRIORITY_DEFAULT,
+            QueuePriority::Low        => DISPATCH_QUEUE_PRIORITY_LOW,
+            QueuePriority::Background => DISPATCH_QUEUE_PRIORITY_BACKGROUND,
         }
     }
 }
@@ -62,6 +80,14 @@ impl Queue {
             dispatch_retain(queue);
         }
         Queue { ptr: queue }
+    }
+
+    pub fn global(priority: QueuePriority) -> Self {
+        unsafe {
+            let queue = dispatch_get_global_queue(priority.as_raw(), 0);
+            dispatch_retain(queue);
+            Queue { ptr: queue }
+        }
     }
 
     pub fn create(label: Option<&str>, attr: QueueAttribute) -> Self {
