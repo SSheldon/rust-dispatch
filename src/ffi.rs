@@ -1,10 +1,11 @@
 #![allow(non_camel_case_types)]
 
-use libc::{c_char, c_long, c_ulong, c_void, size_t};
+use libc::{c_char, c_long, c_ulong, c_void, size_t, timespec};
 
 pub type dispatch_function_t = extern fn(*mut c_void);
 pub type dispatch_object_t = *mut ();
 pub type dispatch_queue_t = *mut ();
+pub type dispatch_time_t = u64;
 pub type dispatch_queue_attr_t = *const ();
 
 #[link(name = "System", kind = "dylib")]
@@ -46,6 +47,9 @@ extern {
     // void dispatch_set_context ( dispatch_object_t object, void *context );
     // void dispatch_set_finalizer_f ( dispatch_object_t object, dispatch_function_t finalizer );
     // void dispatch_suspend ( dispatch_object_t object );
+
+    pub fn dispatch_time(when: dispatch_time_t, delta: i64) -> dispatch_time_t;
+    pub fn dispatch_walltime(when: *const timespec, delta: i64) -> dispatch_time_t;
 }
 
 pub fn dispatch_get_main_queue() -> dispatch_queue_t {
