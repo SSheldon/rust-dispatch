@@ -120,6 +120,15 @@ impl Queue {
     }
 }
 
+impl Clone for Queue {
+    fn clone(&self) -> Self {
+        unsafe {
+            dispatch_retain(self.ptr);
+        }
+        Queue { ptr: self.ptr }
+    }
+}
+
 impl Drop for Queue {
     fn drop(&mut self) {
         unsafe {

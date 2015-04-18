@@ -42,7 +42,7 @@ extern {
     // void * dispatch_get_context ( dispatch_object_t object );
     pub fn dispatch_release(object: dispatch_object_t);
     // void dispatch_resume ( dispatch_object_t object );
-    // void dispatch_retain ( dispatch_object_t object );
+    pub fn dispatch_retain(object: dispatch_object_t);
     // void dispatch_set_context ( dispatch_object_t object, void *context );
     // void dispatch_set_finalizer_f ( dispatch_object_t object, dispatch_function_t finalizer );
     // void dispatch_suspend ( dispatch_object_t object );
