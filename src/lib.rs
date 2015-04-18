@@ -95,6 +95,29 @@ impl Queue {
             dispatch_apply_f(slice.len() as size_t, self.ptr, context, work);
         }
     }
+
+    pub fn map<T, U, F>(&self, vec: Vec<T>, work: F) -> Vec<U>
+            where F: Send + Sync + Fn(T) -> U, T: Send, U: Send {
+        let mut src = vec;
+        let len = src.len();
+        let src_ptr = src.as_ptr();
+
+        let mut dest = Vec::with_capacity(len);
+        let dest_ptr = dest.as_mut_ptr();
+
+        let work = move |i| unsafe {
+            let result = work(ptr::read(src_ptr.offset(i as isize)));
+            ptr::write(dest_ptr.offset(i as isize), result);
+        };
+        let (context, work) = context_and_apply_function(&work);
+        unsafe {
+            src.set_len(0);
+            dispatch_apply_f(len as size_t, self.ptr, context, work);
+            dest.set_len(len);
+        }
+
+        dest
+    }
 }
 
 impl Drop for Queue {
@@ -144,5 +167,14 @@ mod tests {
 
         q.apply(&mut nums, |x| *x += 1);
         assert!(nums == [1, 2]);
+    }
+
+    #[test]
+    fn test_map() {
+        let q = Queue::create(None, QueueAttribute::Serial);
+        let nums = vec![0, 1];
+
+        let result = q.map(nums, |x| x + 1);
+        assert!(result == [1, 2]);
     }
 }
