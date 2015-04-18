@@ -15,7 +15,7 @@ extern {
     pub fn dispatch_get_global_queue(identifier: c_long, flags: c_ulong) -> dispatch_queue_t;
     pub fn dispatch_queue_create(label: *const c_char, attr: dispatch_queue_attr_t) -> dispatch_queue_t;
     // dispatch_queue_attr_t dispatch_queue_attr_make_with_qos_class ( dispatch_queue_attr_t attr, dispatch_qos_class_t qos_class, int relative_priority );
-    // const char * dispatch_queue_get_label ( dispatch_queue_t queue );
+    pub fn dispatch_queue_get_label(queue: dispatch_queue_t) -> *const c_char;
     // void dispatch_set_target_queue ( dispatch_object_t object, dispatch_queue_t queue );
     pub fn dispatch_main();
 

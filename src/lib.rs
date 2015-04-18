@@ -1,8 +1,9 @@
 extern crate libc;
 
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 use std::mem;
 use std::ptr;
+use std::str;
 use libc::{c_long, c_void, size_t};
 
 use ffi::*;
@@ -90,12 +91,23 @@ impl Queue {
         }
     }
 
-    pub fn create(label: Option<&str>, attr: QueueAttribute) -> Self {
-        let label = label.map(|s| CString::new(s).unwrap());
-        let label_ptr = label.map_or(ptr::null(), |s| s.as_ptr());
-        let attr = attr.as_raw();
-        let queue = unsafe { dispatch_queue_create(label_ptr, attr) };
+    pub fn create(label: &str, attr: QueueAttribute) -> Self {
+        let label = CString::new(label).unwrap();
+        let queue = unsafe {
+            dispatch_queue_create(label.as_ptr(), attr.as_raw())
+        };
         Queue { ptr: queue }
+    }
+
+    pub fn label(&self) -> &str {
+        let label = unsafe {
+            let label_ptr = dispatch_queue_get_label(self.ptr);
+            if label_ptr.is_null() {
+                return "";
+            }
+            CStr::from_ptr(label_ptr)
+        };
+        str::from_utf8(label.to_bytes()).unwrap()
     }
 
     pub fn sync<T, F>(&self, work: F) -> T
@@ -184,7 +196,7 @@ mod tests {
 
     #[test]
     fn test_serial_queue() {
-        let q = Queue::create(None, QueueAttribute::Serial);
+        let q = Queue::create("", QueueAttribute::Serial);
         let mut num = 0;
 
         q.sync(|| num = 1);
@@ -195,7 +207,7 @@ mod tests {
 
     #[test]
     fn test_serial_queue_async() {
-        let q = Queue::create(None, QueueAttribute::Serial);
+        let q = Queue::create("", QueueAttribute::Serial);
         let mut num = 0;
 
         // Create a pointer we can send to our async block
@@ -211,8 +223,14 @@ mod tests {
     }
 
     #[test]
+    fn test_queue_label() {
+        let q = Queue::create("com.example.rust", QueueAttribute::Serial);
+        assert!(q.label() == "com.example.rust");
+    }
+
+    #[test]
     fn test_apply() {
-        let q = Queue::create(None, QueueAttribute::Serial);
+        let q = Queue::create("", QueueAttribute::Serial);
         let mut nums = [0, 1];
 
         q.apply(&mut nums, |x| *x += 1);
@@ -221,7 +239,7 @@ mod tests {
 
     #[test]
     fn test_map() {
-        let q = Queue::create(None, QueueAttribute::Serial);
+        let q = Queue::create("", QueueAttribute::Serial);
         let nums = vec![0, 1];
 
         let result = q.map(nums, |x| x + 1);
