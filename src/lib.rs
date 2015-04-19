@@ -59,6 +59,23 @@ fn context_and_function<F>(closure: F) -> (*mut c_void, dispatch_function_t)
     }
 }
 
+fn context_and_sync_function<F>(closure: *const F) ->
+        (*mut c_void, dispatch_function_t)
+        where F: FnOnce() {
+    extern fn work_read_closure<F>(context: *const F) where F: FnOnce() {
+        // When dispatching sync, we can avoid boxing the closure since we know
+        // it will live long enough on the stack; the caller will forget the
+        // closure afterwards to prevent a double free.
+        let closure = unsafe { ptr::read(context) };
+        closure();
+    }
+
+    let func: extern fn(*const F) = work_read_closure::<F>;
+    unsafe {
+        (closure as *mut c_void, mem::transmute(func))
+    }
+}
+
 fn context_and_apply_function<F>(closure: &F) ->
         (*mut c_void, extern fn(*mut c_void, size_t))
         where F: Fn(usize) {
@@ -113,12 +130,18 @@ impl Queue {
     pub fn sync<T, F>(&self, work: F) -> T
             where F: Send + FnOnce() -> T, T: Send {
         unsafe {
-            let mut result: T = mem::uninitialized();
+            let mut result = mem::uninitialized();
             let result_ptr: *mut T = &mut result;
-            let (context, work) = context_and_function(move || {
+
+            let closure = move || {
                 ptr::write(result_ptr, work());
-            });
+            };
+            let (context, work) = context_and_sync_function(&closure);
             dispatch_sync_f(self.ptr, context, work);
+            // Forget our closure to prevent a double free since
+            // it was read off the stack when executed.
+            mem::forget(closure);
+
             result
         }
     }
@@ -215,6 +238,15 @@ mod tests {
         assert!(num == 1);
 
         assert!(q.sync(|| num) == 1);
+    }
+
+    #[test]
+    fn test_sync_owned() {
+        let q = Queue::create("", QueueAttribute::Serial);
+
+        let s = "Hello, world!".to_string();
+        let len = q.sync(move || s.len());
+        assert!(len == 13);
     }
 
     #[test]
