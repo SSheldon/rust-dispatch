@@ -25,7 +25,7 @@ extern {
     // void dispatch_sync ( dispatch_queue_t queue, dispatch_block_t block );
     pub fn dispatch_sync_f(queue: dispatch_queue_t, context: *mut c_void, work: dispatch_function_t);
     // void dispatch_after ( dispatch_time_t when, dispatch_queue_t queue, dispatch_block_t block );
-    // void dispatch_after_f ( dispatch_time_t when, dispatch_queue_t queue, void *context, dispatch_function_t work );
+    pub fn dispatch_after_f(when: dispatch_time_t, queue: dispatch_queue_t, context: *mut c_void, work: dispatch_function_t);
     // void dispatch_apply ( size_t iterations, dispatch_queue_t queue, void (^block)(size_t) );
     pub fn dispatch_apply_f(iterations: size_t, queue: dispatch_queue_t, context: *mut c_void, work: extern fn(*mut c_void, size_t));
     // void dispatch_once ( dispatch_once_t *predicate, dispatch_block_t block );
@@ -63,6 +63,9 @@ pub const DISPATCH_QUEUE_PRIORITY_HIGH: c_long       = 2;
 pub const DISPATCH_QUEUE_PRIORITY_DEFAULT: c_long    = 0;
 pub const DISPATCH_QUEUE_PRIORITY_LOW: c_long        = -2;
 pub const DISPATCH_QUEUE_PRIORITY_BACKGROUND: c_long = -1 << 15;
+
+pub const DISPATCH_TIME_NOW: dispatch_time_t     = 0;
+pub const DISPATCH_TIME_FOREVER: dispatch_time_t = !0;
 
 #[cfg(test)]
 mod tests {

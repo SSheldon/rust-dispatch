@@ -130,6 +130,15 @@ impl Queue {
         }
     }
 
+    pub fn after_ms<F>(&self, ms: u32, work: F)
+            where F: 'static + Send + FnOnce() {
+        let (context, work) = context_and_function(work);
+        unsafe {
+            let when = dispatch_time(DISPATCH_TIME_NOW, 1000000 * (ms as i64));
+            dispatch_after_f(when, self.ptr, context, work);
+        }
+    }
+
     pub fn apply<T, F>(&self, slice: &mut [T], work: F)
             where F: Send + Sync + Fn(&mut T), T: Send {
         let slice_ptr = slice.as_mut_ptr();
@@ -194,6 +203,9 @@ pub fn main() -> ! {
 mod tests {
     use super::*;
 
+    struct SendPtr(*mut i32);
+    unsafe impl Send for SendPtr { }
+
     #[test]
     fn test_serial_queue() {
         let q = Queue::create("", QueueAttribute::Serial);
@@ -210,15 +222,24 @@ mod tests {
         let q = Queue::create("", QueueAttribute::Serial);
         let mut num = 0;
 
-        // Create a pointer we can send to our async block
-        struct SendPtr(*mut i32);
-        unsafe impl Send for SendPtr { }
         let num_ptr = SendPtr(&mut num);
-
         q.async(move || unsafe { *num_ptr.0 = 1 });
 
         // Sync an empty block to ensure the async one finishes
         q.sync(|| ());
+        assert!(num == 1);
+    }
+
+    #[test]
+    fn test_after() {
+        let q = Queue::create("", QueueAttribute::Serial);
+        let mut num = 0;
+
+        let num_ptr = SendPtr(&mut num);
+        q.after_ms(5, move || unsafe { *num_ptr.0 = 1 });
+
+        // Sleep for the previous block to complete
+        ::std::thread::sleep_ms(10);
         assert!(num == 1);
     }
 
