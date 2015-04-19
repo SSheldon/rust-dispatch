@@ -48,6 +48,15 @@ extern {
     // void dispatch_set_finalizer_f ( dispatch_object_t object, dispatch_function_t finalizer );
     // void dispatch_suspend ( dispatch_object_t object );
 
+    // dispatch_semaphore_t dispatch_semaphore_create ( long value );
+    // long dispatch_semaphore_signal ( dispatch_semaphore_t dsema );
+    // long dispatch_semaphore_wait ( dispatch_semaphore_t dsema, dispatch_time_t timeout );
+
+    // void dispatch_barrier_async ( dispatch_queue_t queue, dispatch_block_t block );
+    // void dispatch_barrier_async_f ( dispatch_queue_t queue, void *context, dispatch_function_t work );
+    // void dispatch_barrier_sync ( dispatch_queue_t queue, dispatch_block_t block );
+    // void dispatch_barrier_sync_f ( dispatch_queue_t queue, void *context, dispatch_function_t work );
+
     pub fn dispatch_time(when: dispatch_time_t, delta: i64) -> dispatch_time_t;
     pub fn dispatch_walltime(when: *const timespec, delta: i64) -> dispatch_time_t;
 }
