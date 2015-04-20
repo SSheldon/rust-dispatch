@@ -6,6 +6,9 @@ submitted to queues where they are scheduled to execute.
 For more information, see Apple's [Grand Central Dispatch reference](
 https://developer.apple.com/library/mac/documentation/Performance/Reference/GCD_libdispatch_Ref/index.html).
 
+* Documentation: http://ssheldon.github.io/rust-objc/dispatch/
+* Crate: https://crates.io/crates/dispatch
+
 # Serial Queues
 
 Serial queues execute tasks serially in FIFO order. The application's main
