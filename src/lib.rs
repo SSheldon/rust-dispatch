@@ -8,8 +8,10 @@ use libc::{c_long, c_void, size_t};
 
 use ffi::*;
 
+/// Raw foreign function interface for libdispatch.
 pub mod ffi;
 
+/// The type of a dispatch queue.
 pub enum QueueAttribute {
     Serial,
     Concurrent,
@@ -24,6 +26,7 @@ impl QueueAttribute {
     }
 }
 
+/// The priority of a global concurrent queue.
 pub enum QueuePriority {
     High,
     Default,
@@ -42,6 +45,10 @@ impl QueuePriority {
     }
 }
 
+/// A Grand Central Dispatch queue.
+///
+/// For more information, see Apple's [Grand Central Dispatch reference](
+/// https://developer.apple.com/library/mac/documentation/Performance/Reference/GCD_libdispatch_Ref/index.html).
 pub struct Queue {
     ptr: dispatch_queue_t,
 }
@@ -92,6 +99,8 @@ fn context_and_apply_function<F>(closure: &F) ->
 }
 
 impl Queue {
+    /// Returns the serial dispatch `Queue` associated with the application's
+    /// main thread.
     pub fn main() -> Self {
         let queue = dispatch_get_main_queue();
         unsafe {
@@ -100,6 +109,8 @@ impl Queue {
         Queue { ptr: queue }
     }
 
+    /// Returns a system-defined global concurrent `Queue` with the specified
+    /// priority.
     pub fn global(priority: QueuePriority) -> Self {
         unsafe {
             let queue = dispatch_get_global_queue(priority.as_raw(), 0);
@@ -108,6 +119,7 @@ impl Queue {
         }
     }
 
+    /// Creates a new dispatch `Queue`.
     pub fn create(label: &str, attr: QueueAttribute) -> Self {
         let label = CString::new(label).unwrap();
         let queue = unsafe {
@@ -116,6 +128,7 @@ impl Queue {
         Queue { ptr: queue }
     }
 
+    /// Returns the label that was specified for self.
     pub fn label(&self) -> &str {
         let label = unsafe {
             let label_ptr = dispatch_queue_get_label(self.ptr);
@@ -127,6 +140,7 @@ impl Queue {
         str::from_utf8(label.to_bytes()).unwrap()
     }
 
+    /// Submits a closure for execution on self and waits until it completes.
     pub fn sync<T, F>(&self, work: F) -> T
             where F: Send + FnOnce() -> T, T: Send {
         unsafe {
@@ -146,6 +160,8 @@ impl Queue {
         }
     }
 
+    /// Submits a closure for asynchronous execution on self and returns
+    /// immediately.
     pub fn async<F>(&self, work: F) where F: 'static + Send + FnOnce() {
         let (context, work) = context_and_function(work);
         unsafe {
@@ -153,6 +169,8 @@ impl Queue {
         }
     }
 
+    /// After the specified delay, submits a closure for asynchronous execution
+    /// on self.
     pub fn after_ms<F>(&self, ms: u32, work: F)
             where F: 'static + Send + FnOnce() {
         let (context, work) = context_and_function(work);
@@ -162,6 +180,8 @@ impl Queue {
         }
     }
 
+    /// Submits a closure to be executed on self for each element of the
+    /// provided slice and waits until it completes.
     pub fn apply<T, F>(&self, slice: &mut [T], work: F)
             where F: Send + Sync + Fn(&mut T), T: Send {
         let slice_ptr = slice.as_mut_ptr();
@@ -174,6 +194,8 @@ impl Queue {
         }
     }
 
+    /// Submits a closure to be executed on self for each element of the
+    /// provided vector and returns a `Vec` of the mapped elements.
     pub fn map<T, U, F>(&self, vec: Vec<T>, work: F) -> Vec<U>
             where F: Send + Sync + Fn(T) -> U, T: Send, U: Send {
         let mut src = vec;
