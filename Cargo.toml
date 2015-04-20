@@ -1,7 +1,16 @@
 [package]
 name = "dispatch"
-version = "0.0.0"
+version = "0.0.1"
 authors = ["Steven Sheldon"]
+
+description = "Rust wrapper for Apple's Grand Central Dispatch."
+keywords = ["gcd", "objective-c", "osx", "ios"]
+readme = "README.md"
+repository = "http://github.com/SSheldon/rust-dispatch"
+documentation = "http://ssheldon.github.io/rust-objc/dispatch/"
+license = "MIT"
+
+exclude = [".gitignore"]
 
 [dependencies]
 libc = "0.1"
