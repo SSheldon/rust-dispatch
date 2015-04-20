@@ -11,5 +11,7 @@ fn main() {
         exit(0);
     });
 
-    dispatch::main();
+    unsafe {
+        dispatch::ffi::dispatch_main();
+    }
 }

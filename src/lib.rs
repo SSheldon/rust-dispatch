@@ -215,13 +215,6 @@ impl Drop for Queue {
     }
 }
 
-pub fn main() -> ! {
-    unsafe {
-        dispatch_main();
-    }
-    unreachable!();
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
