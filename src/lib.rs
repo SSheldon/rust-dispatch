@@ -1,8 +1,8 @@
 /*!
 Rust wrapper for Apple's Grand Central Dispatch (GCD).
 
-GCD is an implementation of task parallelism that allows tasks tasks to be
-submitted to queues where they are scheduled to execute.
+GCD is an implementation of task parallelism that allows tasks to be submitted
+to queues where they are scheduled to execute.
 
 For more information, see Apple's [Grand Central Dispatch reference](
 https://developer.apple.com/library/mac/documentation/Performance/Reference/GCD_libdispatch_Ref/index.html).
