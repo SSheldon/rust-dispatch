@@ -227,7 +227,7 @@ impl Queue {
     /// Submits a closure to be executed on self for each element of the
     /// provided slice and waits until it completes.
     pub fn apply<T, F>(&self, slice: &mut [T], work: F)
-            where F: Send + Sync + Fn(&mut T), T: Send {
+            where F: Sync + Fn(&mut T), T: Send {
         let slice_ptr = slice.as_mut_ptr();
         let work = move |i| unsafe {
             work(&mut *slice_ptr.offset(i as isize));
@@ -241,7 +241,7 @@ impl Queue {
     /// Submits a closure to be executed on self for each element of the
     /// provided vector and returns a `Vec` of the mapped elements.
     pub fn map<T, U, F>(&self, vec: Vec<T>, work: F) -> Vec<U>
-            where F: Send + Sync + Fn(T) -> U, T: Send, U: Send {
+            where F: Sync + Fn(T) -> U, T: Send, U: Send {
         let mut src = vec;
         let len = src.len();
         let src_ptr = src.as_ptr();
