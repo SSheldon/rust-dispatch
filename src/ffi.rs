@@ -2,10 +2,22 @@
 
 use libc::{c_char, c_long, c_ulong, c_void, size_t, timespec};
 
+// dispatch_block_t
 pub type dispatch_function_t = extern fn(*mut c_void);
+// dispatch_group_t
 pub type dispatch_object_t = *mut ();
+// dispatch_once_t
 pub type dispatch_queue_t = *mut ();
 pub type dispatch_time_t = u64;
+// dispatch_source_type_t
+// dispatch_fd_t
+// dispatch_data_t
+// dispatch_data_applier_t
+// dispatch_io_t
+// dispatch_io_handler_t
+// dispatch_io_type_t
+// dispatch_io_close_flags_t
+// dispatch_io_interval_flags_t
 pub type dispatch_queue_attr_t = *const ();
 
 #[link(name = "System", kind = "dylib")]
@@ -57,8 +69,50 @@ extern {
     // void dispatch_barrier_sync ( dispatch_queue_t queue, dispatch_block_t block );
     // void dispatch_barrier_sync_f ( dispatch_queue_t queue, void *context, dispatch_function_t work );
 
+    // void dispatch_source_cancel ( dispatch_source_t source );
+    // dispatch_source_t dispatch_source_create ( dispatch_source_type_t type, uintptr_t handle, unsigned long mask, dispatch_queue_t queue );
+    // unsigned long dispatch_source_get_data ( dispatch_source_t source );
+    // uintptr_t dispatch_source_get_handle ( dispatch_source_t source );
+    // unsigned long dispatch_source_get_mask ( dispatch_source_t source );
+    // void dispatch_source_merge_data ( dispatch_source_t source, unsigned long value );
+    // void dispatch_source_set_registration_handler ( dispatch_source_t source, dispatch_block_t handler );
+    // void dispatch_source_set_registration_handler_f ( dispatch_source_t source, dispatch_function_t handler );
+    // void dispatch_source_set_cancel_handler ( dispatch_source_t source, dispatch_block_t handler );
+    // void dispatch_source_set_cancel_handler_f ( dispatch_source_t source, dispatch_function_t handler );
+    // void dispatch_source_set_event_handler ( dispatch_source_t source, dispatch_block_t handler );
+    // void dispatch_source_set_event_handler_f ( dispatch_source_t source, dispatch_function_t handler );
+    // void dispatch_source_set_timer ( dispatch_source_t source, dispatch_time_t start, uint64_t interval, uint64_t leeway );
+    // long dispatch_source_testcancel ( dispatch_source_t source );
+
+    // void dispatch_read ( dispatch_fd_t fd, size_t length, dispatch_queue_t queue, void (^handler)(dispatch_data_t data, int error) );
+    // void dispatch_write ( dispatch_fd_t fd, dispatch_data_t data, dispatch_queue_t queue, void (^handler)(dispatch_data_t data, int error) );
+
+    // dispatch_io_t dispatch_io_create ( dispatch_io_type_t type, dispatch_fd_t fd, dispatch_queue_t queue, void (^cleanup_handler)(int error) );
+    // dispatch_io_t dispatch_io_create_with_path ( dispatch_io_type_t type, const char *path, int oflag, mode_t mode, dispatch_queue_t queue, void (^cleanup_handler)(int error) );
+    // dispatch_io_t dispatch_io_create_with_io ( dispatch_io_type_t type, dispatch_io_t io, dispatch_queue_t queue, void (^cleanup_handler)(int error) );
+    // void dispatch_io_read ( dispatch_io_t channel, off_t offset, size_t length, dispatch_queue_t queue, dispatch_io_handler_t io_handler );
+    // void dispatch_io_write ( dispatch_io_t channel, off_t offset, dispatch_data_t data, dispatch_queue_t queue, dispatch_io_handler_t io_handler );
+    // void dispatch_io_close ( dispatch_io_t channel, dispatch_io_close_flags_t flags );
+    // void dispatch_io_barrier ( dispatch_io_t channel, dispatch_block_t barrier );
+    // void dispatch_io_set_high_water ( dispatch_io_t channel, size_t high_water );
+    // void dispatch_io_set_low_water ( dispatch_io_t channel, size_t low_water );
+    // void dispatch_io_set_interval ( dispatch_io_t channel, uint64_t interval, dispatch_io_interval_flags_t flags );
+    // dispatch_fd_t dispatch_io_get_descriptor ( dispatch_io_t channel );
+
+    // dispatch_data_t dispatch_data_create ( const void *buffer, size_t size, dispatch_queue_t queue, dispatch_block_t destructor );
+    // size_t dispatch_data_get_size ( dispatch_data_t data );
+    // dispatch_data_t dispatch_data_create_map ( dispatch_data_t data, const void **buffer_ptr, size_t *size_ptr );
+    // dispatch_data_t dispatch_data_create_concat ( dispatch_data_t data1, dispatch_data_t data2 );
+    // dispatch_data_t dispatch_data_create_subrange ( dispatch_data_t data, size_t offset, size_t length );
+    // bool dispatch_data_apply ( dispatch_data_t data, dispatch_data_applier_t applier );
+    // dispatch_data_t dispatch_data_copy_region ( dispatch_data_t data, size_t location, size_t *offset_ptr );
+
     pub fn dispatch_time(when: dispatch_time_t, delta: i64) -> dispatch_time_t;
     pub fn dispatch_walltime(when: *const timespec, delta: i64) -> dispatch_time_t;
+
+    // void dispatch_queue_set_specific ( dispatch_queue_t queue, const void *key, void *context, dispatch_function_t destructor );
+    // void * dispatch_queue_get_specific ( dispatch_queue_t queue, const void *key );
+    // void * dispatch_get_specific ( const void *key );
 }
 
 pub fn dispatch_get_main_queue() -> dispatch_queue_t {
