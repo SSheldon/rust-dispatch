@@ -110,23 +110,6 @@ fn context_and_function<F>(closure: F) -> (*mut c_void, dispatch_function_t)
     }
 }
 
-fn context_and_sync_function<F>(closure: *const F) ->
-        (*mut c_void, dispatch_function_t)
-        where F: FnOnce() {
-    extern fn work_read_closure<F>(context: *const F) where F: FnOnce() {
-        // When dispatching sync, we can avoid boxing the closure since we know
-        // it will live long enough on the stack; the caller will forget the
-        // closure afterwards to prevent a double free.
-        let closure = unsafe { ptr::read(context) };
-        closure();
-    }
-
-    let func: extern fn(*const F) = work_read_closure::<F>;
-    unsafe {
-        (closure as *mut c_void, mem::transmute(func))
-    }
-}
-
 fn context_and_apply_function<F>(closure: &F) ->
         (*mut c_void, extern fn(*mut c_void, size_t))
         where F: Fn(usize) {
@@ -187,20 +170,31 @@ impl Queue {
     /// Submits a closure for execution on self and waits until it completes.
     pub fn sync<T, F>(&self, work: F) -> T
             where F: Send + FnOnce() -> T, T: Send {
+        let mut result = None;
+        {
+            let result_ref = &mut result;
+            self.sync_no_ret(move || {
+                *result_ref = Some(work());
+            });
+        }
+        // This was set so it's safe to unwrap
+        result.unwrap()
+    }
+
+    fn sync_no_ret<F>(&self, work: F) where F: Send + FnOnce() {
+        extern fn work_read_closure<F>(context: &mut Option<F>)
+                where F: FnOnce() {
+            // This is always passed Some, so it's safe to unwrap
+            let closure = context.take().unwrap();
+            closure();
+        }
+
+        // Store in an Option so we can safely read the closure off the stack
+        let mut closure = Some(work);
         unsafe {
-            let mut result = mem::uninitialized();
-            let result_ptr: *mut T = &mut result;
-
-            let closure = move || {
-                ptr::write(result_ptr, work());
-            };
-            let (context, work) = context_and_sync_function(&closure);
+            let context = &mut closure as *mut _ as *mut c_void;
+            let work = mem::transmute(work_read_closure::<F>);
             dispatch_sync_f(self.ptr, context, work);
-            // Forget our closure to prevent a double free since
-            // it was read off the stack when executed.
-            mem::forget(closure);
-
-            result
         }
     }
 
