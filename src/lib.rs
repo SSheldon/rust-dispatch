@@ -277,10 +277,8 @@ impl Drop for Queue {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Arc, Mutex};
     use super::*;
-
-    struct SendPtr(*mut i32);
-    unsafe impl Send for SendPtr { }
 
     #[test]
     fn test_serial_queue() {
@@ -305,27 +303,33 @@ mod tests {
     #[test]
     fn test_serial_queue_async() {
         let q = Queue::create("", QueueAttribute::Serial);
-        let mut num = 0;
+        let num = Arc::new(Mutex::new(0));
 
-        let num_ptr = SendPtr(&mut num);
-        q.async(move || unsafe { *num_ptr.0 = 1 });
+        let num2 = num.clone();
+        q.async(move || {
+            let mut num = num2.lock().unwrap();
+            *num = 1;
+        });
 
         // Sync an empty block to ensure the async one finishes
         q.sync(|| ());
-        assert!(num == 1);
+        assert!(*num.lock().unwrap() == 1);
     }
 
     #[test]
     fn test_after() {
         let q = Queue::create("", QueueAttribute::Serial);
-        let mut num = 0;
+        let num = Arc::new(Mutex::new(0));
 
-        let num_ptr = SendPtr(&mut num);
-        q.after_ms(5, move || unsafe { *num_ptr.0 = 1 });
+        let num2 = num.clone();
+        q.after_ms(5, move || {
+            let mut num = num2.lock().unwrap();
+            *num = 1;
+        });
 
         // Sleep for the previous block to complete
         ::std::thread::sleep_ms(10);
-        assert!(num == 1);
+        assert!(*num.lock().unwrap() == 1);
     }
 
     #[test]
