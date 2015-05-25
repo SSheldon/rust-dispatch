@@ -4,7 +4,7 @@ use libc::{c_char, c_long, c_ulong, c_void, size_t, timespec};
 
 // dispatch_block_t
 pub type dispatch_function_t = extern fn(*mut c_void);
-// dispatch_group_t
+pub type dispatch_group_t = *mut ();
 pub type dispatch_object_t = *mut ();
 // dispatch_once_t
 pub type dispatch_queue_t = *mut ();
@@ -44,13 +44,13 @@ extern {
     // void dispatch_once_f ( dispatch_once_t *predicate, void *context, dispatch_function_t function );
 
     // void dispatch_group_async ( dispatch_group_t group, dispatch_queue_t queue, dispatch_block_t block );
-    // void dispatch_group_async_f ( dispatch_group_t group, dispatch_queue_t queue, void *context, dispatch_function_t work );
-    // dispatch_group_t dispatch_group_create ( void );
-    // void dispatch_group_enter ( dispatch_group_t group );
-    // void dispatch_group_leave ( dispatch_group_t group );
+    pub fn dispatch_group_async_f(group: dispatch_group_t, queue: dispatch_queue_t, context: *mut c_void, work: dispatch_function_t);
+    pub fn dispatch_group_create() -> dispatch_group_t;
+    pub fn dispatch_group_enter(group: dispatch_group_t);
+    pub fn dispatch_group_leave(group: dispatch_group_t);
     // void dispatch_group_notify ( dispatch_group_t group, dispatch_queue_t queue, dispatch_block_t block );
-    // void dispatch_group_notify_f ( dispatch_group_t group, dispatch_queue_t queue, void *context, dispatch_function_t work );
-    // long dispatch_group_wait ( dispatch_group_t group, dispatch_time_t timeout );
+    pub fn dispatch_group_notify_f(group: dispatch_group_t, queue: dispatch_queue_t, context: *mut c_void, work: dispatch_function_t);
+    pub fn dispatch_group_wait(group: dispatch_group_t, timeout: dispatch_time_t) -> c_long;
 
     // void * dispatch_get_context ( dispatch_object_t object );
     pub fn dispatch_release(object: dispatch_object_t);
