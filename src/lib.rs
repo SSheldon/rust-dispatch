@@ -275,6 +275,58 @@ impl Drop for Queue {
     }
 }
 
+pub struct Group {
+    ptr: dispatch_group_t,
+}
+
+impl Group {
+    pub fn create() -> Group {
+        unsafe {
+            Group { ptr: dispatch_group_create() }
+        }
+    }
+
+    pub fn async<F>(&self, queue: &Queue, work: F)
+            where F: 'static + Send + FnOnce() {
+        let (context, work) = context_and_function(work);
+        unsafe {
+            dispatch_group_async_f(self.ptr, queue.ptr, context, work);
+        }
+    }
+
+    pub fn notify<F>(&self, queue: &Queue, work: F)
+            where F: 'static + Send + FnOnce() {
+        let (context, work) = context_and_function(work);
+        unsafe {
+            dispatch_group_notify_f(self.ptr, queue.ptr, context, work);
+        }
+    }
+
+    pub fn wait(&self) {
+        let result = unsafe {
+            dispatch_group_wait(self.ptr, DISPATCH_TIME_FOREVER)
+        };
+        assert!(result == 0, "Dispatch group wait errored");
+    }
+}
+
+impl Clone for Group {
+    fn clone(&self) -> Self {
+        unsafe {
+            dispatch_retain(self.ptr);
+        }
+        Group { ptr: self.ptr }
+    }
+}
+
+impl Drop for Group {
+    fn drop(&mut self) {
+        unsafe {
+            dispatch_release(self.ptr);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::{Arc, Mutex};
@@ -354,5 +406,29 @@ mod tests {
 
         let result = q.map(nums, |x| x + 1);
         assert!(result == [1, 2]);
+    }
+
+    #[test]
+    fn test_group() {
+        let group = Group::create();
+        let q = Queue::create("", QueueAttribute::Serial);
+        let num = Arc::new(Mutex::new(0));
+
+        let num2 = num.clone();
+        group.async(&q, move || {
+            let mut num = num2.lock().unwrap();
+            *num = 1;
+        });
+
+        let num3 = num.clone();
+        group.notify(&q, move || {
+            let mut num = num3.lock().unwrap();
+            if *num == 1 {
+                *num = 10;
+            }
+        });
+
+        group.wait();
+        assert!(*num.lock().unwrap() == 10);
     }
 }
