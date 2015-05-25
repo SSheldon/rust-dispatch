@@ -286,6 +286,10 @@ impl Group {
         }
     }
 
+    pub fn enter(&self) -> GroupGuard {
+        GroupGuard::new(self)
+    }
+
     pub fn async<F>(&self, queue: &Queue, work: F)
             where F: 'static + Send + FnOnce() {
         let (context, work) = context_and_function(work);
@@ -310,6 +314,9 @@ impl Group {
     }
 }
 
+unsafe impl Sync for Group { }
+unsafe impl Send for Group { }
+
 impl Clone for Group {
     fn clone(&self) -> Self {
         unsafe {
@@ -323,6 +330,27 @@ impl Drop for Group {
     fn drop(&mut self) {
         unsafe {
             dispatch_release(self.ptr);
+        }
+    }
+}
+
+pub struct GroupGuard {
+    group: Group,
+}
+
+impl GroupGuard {
+    fn new(group: &Group) -> GroupGuard {
+        unsafe {
+            dispatch_group_enter(group.ptr);
+        }
+        GroupGuard { group: group.clone() }
+    }
+}
+
+impl Drop for GroupGuard {
+    fn drop(&mut self) {
+        unsafe {
+            dispatch_group_leave(self.group.ptr);
         }
     }
 }
@@ -417,13 +445,21 @@ mod tests {
         let num2 = num.clone();
         group.async(&q, move || {
             let mut num = num2.lock().unwrap();
-            *num = 1;
+            *num += 1;
         });
 
+        let guard = group.enter();
         let num3 = num.clone();
-        group.notify(&q, move || {
+        q.async(move || {
             let mut num = num3.lock().unwrap();
-            if *num == 1 {
+            *num += 1;
+            drop(guard);
+        });
+
+        let num4 = num.clone();
+        group.notify(&q, move || {
+            let mut num = num4.lock().unwrap();
+            if *num == 2 {
                 *num = 10;
             }
         });
