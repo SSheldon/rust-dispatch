@@ -113,6 +113,22 @@ fn context_and_function<F>(closure: F) -> (*mut c_void, dispatch_function_t)
     }
 }
 
+fn context_and_sync_function<F>(closure: &mut Option<F>) ->
+        (*mut c_void, dispatch_function_t)
+        where F: FnOnce() {
+    extern fn work_read_closure<F>(context: &mut Option<F>) where F: FnOnce() {
+        // This is always passed Some, so it's safe to unwrap
+        let closure = context.take().unwrap();
+        closure();
+    }
+
+    let context: *mut Option<F> = closure;
+    let func: extern fn(&mut Option<F>) = work_read_closure::<F>;
+    unsafe {
+        (context as *mut c_void, mem::transmute(func))
+    }
+}
+
 fn context_and_apply_function<F>(closure: &F) ->
         (*mut c_void, extern fn(*mut c_void, size_t))
         where F: Fn(usize) {
@@ -176,29 +192,18 @@ impl Queue {
         let mut result = None;
         {
             let result_ref = &mut result;
-            self.sync_no_ret(move || {
+            let work = move || {
                 *result_ref = Some(work());
-            });
+            };
+
+            let mut work = Some(work);
+            let (context, work) = context_and_sync_function(&mut work);
+            unsafe {
+                dispatch_sync_f(self.ptr, context, work);
+            }
         }
         // This was set so it's safe to unwrap
         result.unwrap()
-    }
-
-    fn sync_no_ret<F>(&self, work: F) where F: Send + FnOnce() {
-        extern fn work_read_closure<F>(context: &mut Option<F>)
-                where F: FnOnce() {
-            // This is always passed Some, so it's safe to unwrap
-            let closure = context.take().unwrap();
-            closure();
-        }
-
-        // Store in an Option so we can safely read the closure off the stack
-        let mut closure = Some(work);
-        unsafe {
-            let context = &mut closure as *mut _ as *mut c_void;
-            let work = mem::transmute(work_read_closure::<F>);
-            dispatch_sync_f(self.ptr, context, work);
-        }
     }
 
     /// Submits a closure for asynchronous execution on self and returns
