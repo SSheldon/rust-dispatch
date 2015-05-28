@@ -552,6 +552,8 @@ mod tests {
         });
 
         group.wait();
+        // Our group is empty, but the notify may not have finished yet
+        q.sync(|| ());
         assert!(*num.lock().unwrap() == 10);
     }
 }
