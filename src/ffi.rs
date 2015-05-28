@@ -65,9 +65,9 @@ extern {
     // long dispatch_semaphore_wait ( dispatch_semaphore_t dsema, dispatch_time_t timeout );
 
     // void dispatch_barrier_async ( dispatch_queue_t queue, dispatch_block_t block );
-    // void dispatch_barrier_async_f ( dispatch_queue_t queue, void *context, dispatch_function_t work );
+    pub fn dispatch_barrier_async_f(queue: dispatch_queue_t, context: *mut c_void, work: dispatch_function_t);
     // void dispatch_barrier_sync ( dispatch_queue_t queue, dispatch_block_t block );
-    // void dispatch_barrier_sync_f ( dispatch_queue_t queue, void *context, dispatch_function_t work );
+    pub fn dispatch_barrier_sync_f(queue: dispatch_queue_t, context: *mut c_void, work: dispatch_function_t);
 
     // void dispatch_source_cancel ( dispatch_source_t source );
     // dispatch_source_t dispatch_source_create ( dispatch_source_type_t type, uintptr_t handle, unsigned long mask, dispatch_queue_t queue );

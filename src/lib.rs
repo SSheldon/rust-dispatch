@@ -264,6 +264,33 @@ impl Queue {
 
         dest
     }
+
+    pub fn barrier_sync<T, F>(&self, work: F) -> T
+            where F: Send + FnOnce() -> T, T: Send {
+        let mut result = None;
+        {
+            let result_ref = &mut result;
+            let work = move || {
+                *result_ref = Some(work());
+            };
+
+            let mut work = Some(work);
+            let (context, work) = context_and_sync_function(&mut work);
+            unsafe {
+                dispatch_barrier_sync_f(self.ptr, context, work);
+            }
+        }
+        // This was set so it's safe to unwrap
+        result.unwrap()
+    }
+
+    pub fn barrier_async<F>(&self, work: F)
+            where F: 'static + Send + FnOnce() {
+        let (context, work) = context_and_function(work);
+        unsafe {
+            dispatch_barrier_async_f(self.ptr, context, work);
+        }
+    }
 }
 
 impl Clone for Queue {
@@ -368,6 +395,14 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use super::*;
 
+    fn async_increment(queue: &Queue, num: &Arc<Mutex<i32>>) {
+        let num = num.clone();
+        queue.async(move || {
+            let mut num = num.lock().unwrap();
+            *num += 1;
+        });
+    }
+
     #[test]
     fn test_serial_queue() {
         let q = Queue::create("", QueueAttribute::Serial);
@@ -393,11 +428,7 @@ mod tests {
         let q = Queue::create("", QueueAttribute::Serial);
         let num = Arc::new(Mutex::new(0));
 
-        let num2 = num.clone();
-        q.async(move || {
-            let mut num = num2.lock().unwrap();
-            *num = 1;
-        });
+        async_increment(&q, &num);
 
         // Sync an empty block to ensure the async one finishes
         q.sync(|| ());
@@ -442,6 +473,54 @@ mod tests {
 
         let result = q.map(nums, |x| x + 1);
         assert!(result == [1, 2]);
+    }
+
+    #[test]
+    fn test_barrier_sync() {
+        let q = Queue::create("", QueueAttribute::Concurrent);
+        let num = Arc::new(Mutex::new(0));
+
+        async_increment(&q, &num);
+        async_increment(&q, &num);
+
+        let num2 = num.clone();
+        let result = q.barrier_sync(move || {
+            let mut num = num2.lock().unwrap();
+            if *num == 2 {
+                *num = 10;
+            }
+            *num
+        });
+        assert!(result == 10);
+
+        async_increment(&q, &num);
+        async_increment(&q, &num);
+
+        q.barrier_sync(|| ());
+        assert!(*num.lock().unwrap() == 12);
+    }
+
+    #[test]
+    fn test_barrier_async() {
+        let q = Queue::create("", QueueAttribute::Concurrent);
+        let num = Arc::new(Mutex::new(0));
+
+        async_increment(&q, &num);
+        async_increment(&q, &num);
+
+        let num2 = num.clone();
+        q.barrier_async(move || {
+            let mut num = num2.lock().unwrap();
+            if *num == 2 {
+                *num = 10;
+            }
+        });
+
+        async_increment(&q, &num);
+        async_increment(&q, &num);
+
+        q.barrier_sync(|| ());
+        assert!(*num.lock().unwrap() == 12);
     }
 
     #[test]
