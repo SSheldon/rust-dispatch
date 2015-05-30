@@ -53,10 +53,12 @@ use libc::{c_long, c_void, size_t};
 use ffi::*;
 
 pub use future::Future;
+pub use proxy::ProxyQueue;
 
 /// Raw foreign function interface for libdispatch.
 pub mod ffi;
 mod future;
+mod proxy;
 
 /// The type of a dispatch queue.
 pub enum QueueAttribute {
