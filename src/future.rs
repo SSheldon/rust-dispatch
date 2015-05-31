@@ -1,7 +1,7 @@
 use std::cell::UnsafeCell;
 use std::sync::Arc;
 
-use {Group, Queue};
+use {Group, GroupGuard, Queue};
 
 struct FutureCell<T>(UnsafeCell<Option<T>>);
 
@@ -22,25 +22,34 @@ impl<T> FutureCell<T> {
 // This is a lie, but we'll ensure that & methods are never called concurrently
 unsafe impl<T: Send> Sync for FutureCell<T> { }
 
+struct Promise<T> {
+    result: Arc<FutureCell<T>>,
+    _guard: GroupGuard,
+}
+
+impl<T: 'static + Send> Promise<T> {
+    pub fn fulfill(self, value: T) {
+        unsafe {
+            // Since the group is entered, we're guaranteed that no one
+            // is trying to get the value so it's safe to set
+            self.result.set(value);
+        }
+    }
+}
+
 pub struct Future<T> {
-    group: Group,
     value: Arc<FutureCell<T>>,
+    group: Group,
 }
 
 impl<T: 'static + Send> Future<T> {
     pub fn new<F>(queue: &Queue, work: F) -> Future<T>
             where F: 'static + Send + FnOnce() -> T {
-        let value = Arc::new(FutureCell::new());
-        let group = Group::create();
-
-        let result = value.clone();
-        group.async(queue, move || unsafe {
-            // Since the group is entered here, we're guaranteed that no one
-            // is trying to get the value so it's safe to set
-            result.set(work());
+        let (promise, future) = future();
+        queue.async(move || {
+            promise.fulfill(work());
         });
-
-        Future { group: group, value: value }
+        future
     }
 
     pub fn wait(self) -> T {
@@ -52,26 +61,39 @@ impl<T: 'static + Send> Future<T> {
         }
     }
 
-    pub fn map<U, F>(self, queue: &Queue, work: F) -> Future<U>
-            where F: 'static + Send + FnOnce(T) -> U, U: 'static + Send {
-        let value = Arc::new(FutureCell::new());
-        let group = Group::create();
-
-        let guard = group.enter();
-        let result = value.clone();
-        let input = self.value.clone();
-        self.group.notify(queue, move || unsafe {
+    fn notify<F>(self, queue: &Queue, work: F)
+            where F: 'static + Send + FnOnce(T) {
+        let Future { value: input, group } = self;
+        group.notify(queue, move || unsafe {
             // Since the original group is being notified, the group is empty
             // and we're guaranteed that the value has finished being set
             let input = input.get();
-            // Since the new group is entered here, we're guaranteed that no
-            // one is trying to get the value so it's safe to set
-            result.set(work(input));
-            drop(guard);
+            work(input);
         });
-
-        Future { group: group, value: value }
     }
+
+    pub fn map<U, F>(self, queue: &Queue, work: F) -> Future<U>
+            where F: 'static + Send + FnOnce(T) -> U, U: 'static + Send {
+        let (promise, future) = future();
+        self.notify(queue, move |input| {
+            promise.fulfill(work(input));
+        });
+        future
+    }
+}
+
+fn future<T: 'static + Send>() -> (Promise<T>, Future<T>) {
+    let future = Future {
+        value: Arc::new(FutureCell::new()),
+        group: Group::create(),
+    };
+
+    let promise = Promise {
+        result: future.value.clone(),
+        _guard: future.group.enter(),
+    };
+
+    (promise, future)
 }
 
 #[cfg(test)]
