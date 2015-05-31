@@ -61,6 +61,7 @@ mod tests {
     use std::sync::mpsc::channel;
     use super::*;
 
+    #[test]
     fn test_proxy() {
         let proxy = ProxyQueue::new("Hello, world!".to_string());
 
