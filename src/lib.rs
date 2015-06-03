@@ -295,6 +295,9 @@ impl Queue {
     }
 }
 
+unsafe impl Sync for Queue { }
+unsafe impl Send for Queue { }
+
 impl Clone for Queue {
     fn clone(&self) -> Self {
         unsafe {

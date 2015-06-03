@@ -4,6 +4,7 @@ use libc::{c_char, c_long, c_ulong, c_void, size_t, timespec};
 
 // dispatch_block_t
 pub type dispatch_function_t = extern fn(*mut c_void);
+// dispatch_semaphore_t
 pub type dispatch_group_t = *mut ();
 pub type dispatch_object_t = *mut ();
 // dispatch_once_t
