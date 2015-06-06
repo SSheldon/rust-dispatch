@@ -30,7 +30,7 @@ extern {
     pub fn dispatch_queue_create(label: *const c_char, attr: dispatch_queue_attr_t) -> dispatch_queue_t;
     // dispatch_queue_attr_t dispatch_queue_attr_make_with_qos_class ( dispatch_queue_attr_t attr, dispatch_qos_class_t qos_class, int relative_priority );
     pub fn dispatch_queue_get_label(queue: dispatch_queue_t) -> *const c_char;
-    // void dispatch_set_target_queue ( dispatch_object_t object, dispatch_queue_t queue );
+    pub fn dispatch_set_target_queue(object: dispatch_object_t, queue: dispatch_queue_t);
     pub fn dispatch_main();
 
     // void dispatch_async ( dispatch_queue_t queue, dispatch_block_t block );

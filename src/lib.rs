@@ -176,6 +176,20 @@ impl Queue {
         Queue { ptr: queue }
     }
 
+    /// Creates a new dispatch `Queue` with the given target queue.
+    ///
+    /// A dispatch queue's priority is inherited from its target queue.
+    /// Additionally, if both the queue and its target are serial queues,
+    /// their blocks will not be invoked concurrently.
+    pub fn with_target_queue(label: &str, attr: QueueAttribute, target: &Queue)
+            -> Self {
+        let queue = Queue::create(label, attr);
+        unsafe {
+            dispatch_set_target_queue(queue.ptr, target.ptr);
+        }
+        queue
+    }
+
     /// Returns the label that was specified for self.
     pub fn label(&self) -> &str {
         let label = unsafe {
