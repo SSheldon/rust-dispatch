@@ -114,6 +114,14 @@ extern {
     // void dispatch_queue_set_specific ( dispatch_queue_t queue, const void *key, void *context, dispatch_function_t destructor );
     // void * dispatch_queue_get_specific ( dispatch_queue_t queue, const void *key );
     // void * dispatch_get_specific ( const void *key );
+
+    // dispatch_block_t dispatch_block_create(dispatch_block_flags_t flags, dispatch_block_t block);
+    // dispatch_block_t dispatch_block_create_with_qos_class(dispatch_block_flags_t flags, dispatch_qos_class_t qos_class, int relative_priority, dispatch_block_t block);
+    // void dispatch_block_perform(dispatch_block_flags_t flags, dispatch_block_t block);
+    // long dispatch_block_wait(dispatch_block_t block, dispatch_time_t timeout);
+    // dispatch_block_notify(dispatch_block_t block, dispatch_queue_t queue, dispatch_block_t notification_block);
+    // void dispatch_block_cancel(dispatch_block_t block);
+    // long dispatch_block_testcancel(dispatch_block_t block);
 }
 
 pub fn dispatch_get_main_queue() -> dispatch_queue_t {
