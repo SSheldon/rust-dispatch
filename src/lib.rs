@@ -307,6 +307,10 @@ impl Queue {
             dispatch_barrier_async_f(self.ptr, context, work);
         }
     }
+
+    pub fn suspend(&self) -> SuspendGuard {
+        SuspendGuard::new(self)
+    }
 }
 
 unsafe impl Sync for Queue { }
@@ -325,6 +329,35 @@ impl Drop for Queue {
     fn drop(&mut self) {
         unsafe {
             dispatch_release(self.ptr);
+        }
+    }
+}
+
+pub struct SuspendGuard {
+    queue: Queue,
+}
+
+impl SuspendGuard {
+    fn new(queue: &Queue) -> SuspendGuard {
+        unsafe {
+            dispatch_suspend(queue.ptr);
+        }
+        SuspendGuard { queue: queue.clone() }
+    }
+
+    pub fn resume(self) { }
+}
+
+impl Clone for SuspendGuard {
+    fn clone(&self) -> Self {
+        SuspendGuard::new(&self.queue)
+    }
+}
+
+impl Drop for SuspendGuard {
+    fn drop(&mut self) {
+        unsafe {
+            dispatch_resume(self.queue.ptr);
         }
     }
 }
@@ -398,6 +431,14 @@ impl GroupGuard {
             dispatch_group_enter(group.ptr);
         }
         GroupGuard { group: group.clone() }
+    }
+
+    pub fn leave(self) { }
+}
+
+impl Clone for GroupGuard {
+    fn clone(&self) -> Self {
+        GroupGuard::new(&self.group)
     }
 }
 
@@ -543,6 +584,25 @@ mod tests {
     }
 
     #[test]
+    fn test_suspend() {
+        let q = Queue::create("", QueueAttribute::Serial);
+        let num = Arc::new(Mutex::new(0));
+
+        // Suspend the queue and then dispatch some work to it
+        let guard = q.suspend();
+        async_increment(&q, &num);
+
+        // Sleep and ensure the work doesn't occur
+        ::std::thread::sleep_ms(5);
+        assert!(*num.lock().unwrap() == 0);
+
+        // But ensure the work does complete after we resume
+        guard.resume();
+        q.sync(|| ());
+        assert!(*num.lock().unwrap() == 1);
+    }
+
+    #[test]
     fn test_group() {
         let group = Group::create();
         let q = Queue::create("", QueueAttribute::Serial);
@@ -559,7 +619,7 @@ mod tests {
         q.async(move || {
             let mut num = num3.lock().unwrap();
             *num += 1;
-            drop(guard);
+            guard.leave();
         });
 
         let num4 = num.clone();
