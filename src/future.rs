@@ -14,10 +14,6 @@ impl<T> FutureCell<T> {
         (*self.0.get()).take()
     }
 
-    unsafe fn get(&self) -> T {
-        self.take().unwrap()
-    }
-
     unsafe fn set(&self, value: T) {
         *self.0.get() = Some(value);
     }
@@ -58,11 +54,12 @@ impl<T: 'static + Send> Future<T> {
 
     pub fn wait(self) -> T {
         self.group.wait();
-        unsafe {
+        let value = unsafe {
             // Since the group is empty, we're guaranteed that the value has
             // finished being set
-            self.value.get()
-        }
+            self.value.take()
+        };
+        value.expect("Promise was not fulfilled")
     }
 
     fn notify<F>(self, queue: &Queue, work: F)
