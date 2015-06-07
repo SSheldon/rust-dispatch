@@ -10,8 +10,12 @@ impl<T> FutureCell<T> {
         FutureCell(UnsafeCell::new(None))
     }
 
+    unsafe fn take(&self) -> Option<T> {
+        (*self.0.get()).take()
+    }
+
     unsafe fn get(&self) -> T {
-        (*self.0.get()).take().unwrap()
+        self.take().unwrap()
     }
 
     unsafe fn set(&self, value: T) {
@@ -63,12 +67,14 @@ impl<T: 'static + Send> Future<T> {
 
     fn notify<F>(self, queue: &Queue, work: F)
             where F: 'static + Send + FnOnce(T) {
-        let Future { value: input, group } = self;
-        group.notify(queue, move || unsafe {
+        let Future { value, group } = self;
+        group.notify(queue, move || {
             // Since the original group is being notified, the group is empty
             // and we're guaranteed that the value has finished being set
-            let input = input.get();
-            work(input);
+            let value = unsafe { value.take() };
+            if let Some(input) = value {
+                work(input);
+            }
         });
     }
 
