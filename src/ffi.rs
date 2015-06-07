@@ -53,13 +53,13 @@ extern {
     pub fn dispatch_group_notify_f(group: dispatch_group_t, queue: dispatch_queue_t, context: *mut c_void, work: dispatch_function_t);
     pub fn dispatch_group_wait(group: dispatch_group_t, timeout: dispatch_time_t) -> c_long;
 
-    // void * dispatch_get_context ( dispatch_object_t object );
+    pub fn dispatch_get_context(object: dispatch_object_t) -> *mut c_void;
     pub fn dispatch_release(object: dispatch_object_t);
-    // void dispatch_resume ( dispatch_object_t object );
+    pub fn dispatch_resume(object: dispatch_object_t);
     pub fn dispatch_retain(object: dispatch_object_t);
-    // void dispatch_set_context ( dispatch_object_t object, void *context );
-    // void dispatch_set_finalizer_f ( dispatch_object_t object, dispatch_function_t finalizer );
-    // void dispatch_suspend ( dispatch_object_t object );
+    pub fn dispatch_set_context(object: dispatch_object_t, context: *mut c_void);
+    pub fn dispatch_set_finalizer_f(object: dispatch_object_t, finalizer: dispatch_function_t);
+    pub fn dispatch_suspend(object: dispatch_object_t);
 
     // dispatch_semaphore_t dispatch_semaphore_create ( long value );
     // long dispatch_semaphore_signal ( dispatch_semaphore_t dsema );
