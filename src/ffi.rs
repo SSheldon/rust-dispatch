@@ -7,7 +7,7 @@ pub type dispatch_function_t = extern fn(*mut c_void);
 // dispatch_semaphore_t
 pub type dispatch_group_t = *mut ();
 pub type dispatch_object_t = *mut ();
-// dispatch_once_t
+pub type dispatch_once_t = c_long;
 pub type dispatch_queue_t = *mut ();
 pub type dispatch_time_t = u64;
 // dispatch_source_type_t
@@ -42,7 +42,7 @@ extern {
     // void dispatch_apply ( size_t iterations, dispatch_queue_t queue, void (^block)(size_t) );
     pub fn dispatch_apply_f(iterations: size_t, queue: dispatch_queue_t, context: *mut c_void, work: extern fn(*mut c_void, size_t));
     // void dispatch_once ( dispatch_once_t *predicate, dispatch_block_t block );
-    // void dispatch_once_f ( dispatch_once_t *predicate, void *context, dispatch_function_t function );
+    pub fn dispatch_once_f(predicate: *mut dispatch_once_t, context: *mut c_void, function: dispatch_function_t);
 
     // void dispatch_group_async ( dispatch_group_t group, dispatch_queue_t queue, dispatch_block_t block );
     pub fn dispatch_group_async_f(group: dispatch_group_t, queue: dispatch_queue_t, context: *mut c_void, work: dispatch_function_t);

@@ -44,6 +44,7 @@ assert!(nums[0] == "2");
 
 extern crate libc;
 
+use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::mem;
 use std::ptr;
@@ -449,6 +450,33 @@ impl Drop for GroupGuard {
         }
     }
 }
+
+#[allow(dead_code)]
+struct Once {
+    predicate: UnsafeCell<dispatch_once_t>,
+}
+
+#[allow(dead_code)]
+impl Once {
+    // TODO: make this a const fn when the feature is stable
+    pub fn new() -> Once {
+        Once { predicate: UnsafeCell::new(0) }
+    }
+
+    #[inline(always)]
+    pub fn call_once<F>(&'static self, work: F) where F: FnOnce() {
+        let predicate = unsafe { *self.predicate.get() };
+        if predicate != !0 {
+            let mut work = Some(work);
+            let (context, work) = context_and_sync_function(&mut work);
+            unsafe {
+                dispatch_once_f(self.predicate.get(), context, work);
+            }
+        }
+    }
+}
+
+unsafe impl Sync for Once { }
 
 #[cfg(test)]
 mod tests {
