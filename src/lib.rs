@@ -465,12 +465,21 @@ impl Once {
 
     #[inline(always)]
     pub fn call_once<F>(&'static self, work: F) where F: FnOnce() {
-        let predicate = unsafe { *self.predicate.get() };
-        if predicate != !0 {
+        #[cold]
+        #[inline(never)]
+        fn once<F>(predicate: *mut dispatch_once_t, work: F)
+                where F: FnOnce() {
             let mut work = Some(work);
             let (context, work) = context_and_sync_function(&mut work);
             unsafe {
-                dispatch_once_f(self.predicate.get(), context, work);
+                dispatch_once_f(predicate, context, work);
+            }
+        }
+
+        unsafe {
+            let predicate = self.predicate.get();
+            if *predicate != !0 {
+                once(predicate, work);
             }
         }
     }
