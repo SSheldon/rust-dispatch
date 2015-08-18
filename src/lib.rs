@@ -400,6 +400,21 @@ impl Group {
         };
         assert!(result == 0, "Dispatch group wait errored");
     }
+
+    pub fn wait_timeout_ms(&self, ms: u32) -> bool {
+        let result = unsafe {
+            let when = dispatch_time(DISPATCH_TIME_NOW, 1000000 * (ms as i64));
+            dispatch_group_wait(self.ptr, when)
+        };
+        result == 0
+    }
+
+    pub fn is_empty(&self) -> bool {
+        let result = unsafe {
+            dispatch_group_wait(self.ptr, DISPATCH_TIME_NOW)
+        };
+        result == 0
+    }
 }
 
 unsafe impl Sync for Group { }
@@ -667,7 +682,10 @@ mod tests {
             }
         });
 
+        assert!(!group.is_empty());
         group.wait();
+        assert!(group.is_empty());
+
         // Our group is empty, but the notify may not have finished yet
         q.sync(|| ());
         assert!(*num.lock().unwrap() == 10);
