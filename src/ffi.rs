@@ -4,7 +4,7 @@ use libc::{c_char, c_long, c_ulong, c_void, size_t, timespec};
 
 // dispatch_block_t
 pub type dispatch_function_t = extern fn(*mut c_void);
-// dispatch_semaphore_t
+pub type dispatch_semaphore_t = *mut ();
 pub type dispatch_group_t = *mut ();
 pub type dispatch_object_t = *mut ();
 pub type dispatch_once_t = c_long;
@@ -61,9 +61,9 @@ extern {
     pub fn dispatch_set_finalizer_f(object: dispatch_object_t, finalizer: dispatch_function_t);
     pub fn dispatch_suspend(object: dispatch_object_t);
 
-    // dispatch_semaphore_t dispatch_semaphore_create ( long value );
-    // long dispatch_semaphore_signal ( dispatch_semaphore_t dsema );
-    // long dispatch_semaphore_wait ( dispatch_semaphore_t dsema, dispatch_time_t timeout );
+    pub fn dispatch_semaphore_create(value: c_long) -> dispatch_semaphore_t;
+    pub fn dispatch_semaphore_signal(dsema: dispatch_semaphore_t) -> c_long;
+    pub fn dispatch_semaphore_wait(dsema: dispatch_semaphore_t, timeout: dispatch_time_t) -> c_long;
 
     // void dispatch_barrier_async ( dispatch_queue_t queue, dispatch_block_t block );
     pub fn dispatch_barrier_async_f(queue: dispatch_queue_t, context: *mut c_void, work: dispatch_function_t);
