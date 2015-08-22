@@ -304,6 +304,12 @@ impl Queue {
         }
     }
 
+    /// Suspends the invocation of blocks on self and returns a `SuspendGuard`
+    /// that can be dropped to resume.
+    ///
+    /// The suspension occurs after completion of any blocks running at the
+    /// time of the call.
+    /// Invocation does not resume until all `SuspendGuard`s have been dropped.
     pub fn suspend(&self) -> SuspendGuard {
         SuspendGuard::new(self)
     }
@@ -329,6 +335,7 @@ impl Drop for Queue {
     }
 }
 
+/// An RAII guard which will resume a suspended `Queue` when dropped.
 pub struct SuspendGuard {
     queue: Queue,
 }
@@ -341,6 +348,7 @@ impl SuspendGuard {
         SuspendGuard { queue: queue.clone() }
     }
 
+    /// Drops self, allowing the suspended `Queue` to resume.
     pub fn resume(self) { }
 }
 
