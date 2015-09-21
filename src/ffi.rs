@@ -2,13 +2,15 @@
 
 use libc::{c_char, c_long, c_ulong, c_void, size_t, timespec};
 
+pub enum dispatch_object_s { }
+
 // dispatch_block_t
 pub type dispatch_function_t = extern fn(*mut c_void);
-pub type dispatch_semaphore_t = *mut ();
-pub type dispatch_group_t = *mut ();
-pub type dispatch_object_t = *mut ();
+pub type dispatch_semaphore_t = *mut dispatch_object_s;
+pub type dispatch_group_t = *mut dispatch_object_s;
+pub type dispatch_object_t = *mut dispatch_object_s;
 pub type dispatch_once_t = c_long;
-pub type dispatch_queue_t = *mut ();
+pub type dispatch_queue_t = *mut dispatch_object_s;
 pub type dispatch_time_t = u64;
 // dispatch_source_type_t
 // dispatch_fd_t
@@ -19,12 +21,12 @@ pub type dispatch_time_t = u64;
 // dispatch_io_type_t
 // dispatch_io_close_flags_t
 // dispatch_io_interval_flags_t
-pub type dispatch_queue_attr_t = *const ();
+pub type dispatch_queue_attr_t = *const dispatch_object_s;
 
 #[link(name = "System", kind = "dylib")]
 extern {
-    static _dispatch_main_q: ();
-    static _dispatch_queue_attr_concurrent: ();
+    static _dispatch_main_q: dispatch_object_s;
+    static _dispatch_queue_attr_concurrent: dispatch_object_s;
 
     pub fn dispatch_get_global_queue(identifier: c_long, flags: c_ulong) -> dispatch_queue_t;
     pub fn dispatch_queue_create(label: *const c_char, attr: dispatch_queue_attr_t) -> dispatch_queue_t;
