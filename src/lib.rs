@@ -238,6 +238,14 @@ impl Queue {
         }
     }
 
+    pub fn apply<F>(&self, iterations: usize, work: F)
+            where F: Sync + Fn(usize) {
+        let (context, work) = context_and_apply_function(&work);
+        unsafe {
+            dispatch_apply_f(iterations as size_t, self.ptr, context, work);
+        }
+    }
+
     /// Submits a closure to be executed on self for each element of the
     /// provided slice and waits until it completes.
     pub fn foreach<T, F>(&self, slice: &mut [T], work: F)
@@ -570,6 +578,15 @@ mod tests {
     fn test_queue_label() {
         let q = Queue::create("com.example.rust", QueueAttribute::Serial);
         assert!(q.label() == "com.example.rust");
+    }
+
+    #[test]
+    fn test_apply() {
+        let q = Queue::create("", QueueAttribute::Serial);
+        let num = Arc::new(Mutex::new(0));
+
+        q.apply(5, |_| *num.lock().unwrap() += 1);
+        assert!(*num.lock().unwrap() == 5);
     }
 
     #[test]
