@@ -25,7 +25,7 @@ queue.async(|| println!("World"));
 Concurrent dispatch queues execute tasks concurrently. GCD provides global
 concurrent queues that can be accessed through the `Queue::global` function.
 
-`Queue` has two methods that can simplify processing data in parallel, `apply`
+`Queue` has two methods that can simplify processing data in parallel, `foreach`
 and `map`:
 
 ```
@@ -34,7 +34,7 @@ use dispatch::{Queue, QueuePriority};
 let queue = Queue::global(QueuePriority::Default);
 
 let mut nums = vec![1, 2];
-queue.apply(&mut nums, |x| *x += 1);
+queue.foreach(&mut nums, |x| *x += 1);
 assert!(nums == [2, 3]);
 
 let nums = queue.map(nums, |x| x.to_string());
@@ -240,7 +240,7 @@ impl Queue {
 
     /// Submits a closure to be executed on self for each element of the
     /// provided slice and waits until it completes.
-    pub fn apply<T, F>(&self, slice: &mut [T], work: F)
+    pub fn foreach<T, F>(&self, slice: &mut [T], work: F)
             where F: Sync + Fn(&mut T), T: Send {
         let slice_ptr = slice.as_mut_ptr();
         let work = move |i| unsafe {
@@ -573,11 +573,11 @@ mod tests {
     }
 
     #[test]
-    fn test_apply() {
+    fn test_foreach() {
         let q = Queue::create("", QueueAttribute::Serial);
         let mut nums = [0, 1];
 
-        q.apply(&mut nums, |x| *x += 1);
+        q.foreach(&mut nums, |x| *x += 1);
         assert!(nums == [1, 2]);
     }
 
