@@ -412,21 +412,32 @@ impl Drop for SuspendGuard {
     }
 }
 
+/// A Grand Central Dispatch group.
+///
+/// A `Group` is a mechanism for grouping closures and monitoring them. This
+/// allows for aggregate synchronization, so you can track when all the
+/// closures complete, even if they are running on different queues.
 pub struct Group {
     ptr: dispatch_group_t,
 }
 
 impl Group {
+    /// Creates a new dispatch `Group`.
     pub fn create() -> Group {
         unsafe {
             Group { ptr: dispatch_group_create() }
         }
     }
 
+    /// Indicates that a closure has entered self, and increments the current
+    /// count of outstanding tasks. Returns a `GroupGuard` that should be
+    /// dropped when the closure leaves self, decrementing the count.
     pub fn enter(&self) -> GroupGuard {
         GroupGuard::new(self)
     }
 
+    /// Submits a closure asynchronously to the given `Queue` and associates it
+    /// with self.
     pub fn async<F>(&self, queue: &Queue, work: F)
             where F: 'static + Send + FnOnce() {
         let (context, work) = context_and_function(work);
@@ -435,6 +446,9 @@ impl Group {
         }
     }
 
+    /// Schedules a closure to be submitted to the given `Queue` when all tasks
+    /// associated with self have completed.
+    /// If self is empty, the closure is submitted immediately.
     pub fn notify<F>(&self, queue: &Queue, work: F)
             where F: 'static + Send + FnOnce() {
         let (context, work) = context_and_function(work);
@@ -443,6 +457,7 @@ impl Group {
         }
     }
 
+    /// Waits synchronously for all tasks associated with self to complete.
     pub fn wait(&self) {
         let result = unsafe {
             dispatch_group_wait(self.ptr, DISPATCH_TIME_FOREVER)
@@ -450,6 +465,9 @@ impl Group {
         assert!(result == 0, "Dispatch group wait errored");
     }
 
+    /// Waits for all tasks associated with self to complete within the
+    /// specified duration.
+    /// Returns true if the tasks completed or false if the timeout elapsed.
     pub fn wait_timeout_ms(&self, ms: u32) -> bool {
         let result = unsafe {
             let when = dispatch_time(DISPATCH_TIME_NOW, 1000000 * (ms as i64));
@@ -458,6 +476,7 @@ impl Group {
         result == 0
     }
 
+    /// Returns whether self is currently empty.
     pub fn is_empty(&self) -> bool {
         let result = unsafe {
             dispatch_group_wait(self.ptr, DISPATCH_TIME_NOW)
@@ -486,6 +505,7 @@ impl Drop for Group {
     }
 }
 
+/// An RAII guard which will leave a `Group` when dropped.
 pub struct GroupGuard {
     group: Group,
 }
@@ -498,6 +518,7 @@ impl GroupGuard {
         GroupGuard { group: group.clone() }
     }
 
+    /// Drops self, leaving the `Group`.
     pub fn leave(self) { }
 }
 
