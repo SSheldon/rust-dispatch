@@ -42,6 +42,8 @@ assert!(nums[0] == "2");
 ```
 */
 
+#![warn(missing_docs)]
+
 extern crate libc;
 
 use std::cell::UnsafeCell;

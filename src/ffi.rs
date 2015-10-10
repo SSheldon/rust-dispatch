@@ -1,3 +1,4 @@
+#![allow(missing_docs)]
 #![allow(non_camel_case_types)]
 
 use libc::{c_char, c_long, c_ulong, c_void, size_t, timespec};
