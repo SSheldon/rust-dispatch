@@ -58,7 +58,9 @@ pub mod ffi;
 
 /// The type of a dispatch queue.
 pub enum QueueAttribute {
+    /// The queue executes blocks serially in FIFO order.
     Serial,
+    /// The queue executes blocks concurrently.
     Concurrent,
 }
 
@@ -73,9 +75,19 @@ impl QueueAttribute {
 
 /// The priority of a global concurrent queue.
 pub enum QueuePriority {
+    /// The queue is scheduled for execution before any default priority or low
+    /// priority queue.
     High,
+    /// The queue is scheduled for execution after all high priority queues,
+    /// but before any low priority queues.
     Default,
+    /// The queue is scheduled for execution after all default priority and
+    /// high priority queues.
     Low,
+    /// The queue is scheduled for execution after all high priority queues
+    /// have been scheduled. The system runs items on a thread whose
+    /// priority is set for background status and any disk I/O is throttled to
+    /// minimize the impact on the system.
     Background,
 }
 
@@ -238,6 +250,8 @@ impl Queue {
         }
     }
 
+    /// Submits a closure to be executed on self the given number of iterations
+    /// and waits until it completes.
     pub fn apply<F>(&self, iterations: usize, work: F)
             where F: Sync + Fn(usize) {
         let (context, work) = context_and_apply_function(&work);
@@ -285,6 +299,18 @@ impl Queue {
         dest
     }
 
+    /// Submits a closure to be executed on self as a barrier and waits until
+    /// it completes.
+    ///
+    /// Barriers create synchronization points within a concurrent queue.
+    /// If self is concurrent, when it encounters a barrier it delays execution
+    /// of the closure (and any further ones) until all closures submitted
+    /// before the barrier finish executing.
+    /// At that point, the barrier closure executes by itself.
+    /// Upon completion, self resumes its normal execution behavior.
+    ///
+    /// If self is a serial queue or one of the global concurrent queues,
+    /// this method behaves like the normal `sync` method.
     pub fn barrier_sync<T, F>(&self, work: F) -> T
             where F: Send + FnOnce() -> T, T: Send {
         let mut result = None;
@@ -304,6 +330,18 @@ impl Queue {
         result.unwrap()
     }
 
+    /// Submits a closure to be executed on self as a barrier and returns
+    /// immediately.
+    ///
+    /// Barriers create synchronization points within a concurrent queue.
+    /// If self is concurrent, when it encounters a barrier it delays execution
+    /// of the closure (and any further ones) until all closures submitted
+    /// before the barrier finish executing.
+    /// At that point, the barrier closure executes by itself.
+    /// Upon completion, self resumes its normal execution behavior.
+    ///
+    /// If self is a serial queue or one of the global concurrent queues,
+    /// this method behaves like the normal `async` method.
     pub fn barrier_async<F>(&self, work: F)
             where F: 'static + Send + FnOnce() {
         let (context, work) = context_and_function(work);
