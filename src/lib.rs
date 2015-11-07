@@ -51,6 +51,7 @@ use std::ffi::{CStr, CString};
 use std::mem;
 use std::ptr;
 use std::str;
+use std::time::Duration;
 use libc::{c_long, c_void, size_t};
 
 use ffi::*;
@@ -110,6 +111,16 @@ impl QueuePriority {
 /// https://developer.apple.com/library/mac/documentation/Performance/Reference/GCD_libdispatch_Ref/index.html).
 pub struct Queue {
     ptr: dispatch_queue_t,
+}
+
+fn time_after_delay(delay: Duration) -> dispatch_time_t {
+    match delay.as_secs().checked_mul(1_000_000_000) {
+        Some(i) if i < (i64::max_value() as u64) => {
+            let delta = (i as i64).saturating_add(delay.subsec_nanos() as i64);
+            unsafe { dispatch_time(DISPATCH_TIME_NOW, delta) }
+        }
+        _ => DISPATCH_TIME_FOREVER,
+    }
 }
 
 fn context_and_function<F>(closure: F) -> (*mut c_void, dispatch_function_t)
@@ -245,9 +256,16 @@ impl Queue {
     /// on self.
     pub fn after_ms<F>(&self, ms: u32, work: F)
             where F: 'static + Send + FnOnce() {
+        self.after(Duration::from_millis(ms as u64), work);
+    }
+
+    /// After the specified delay, submits a closure for asynchronous execution
+    /// on self.
+    pub fn after<F>(&self, delay: Duration, work: F)
+            where F: 'static + Send + FnOnce() {
+        let when = time_after_delay(delay);
         let (context, work) = context_and_function(work);
         unsafe {
-            let when = dispatch_time(DISPATCH_TIME_NOW, 1000000 * (ms as i64));
             dispatch_after_f(when, self.ptr, context, work);
         }
     }
@@ -471,8 +489,15 @@ impl Group {
     /// specified duration.
     /// Returns true if the tasks completed or false if the timeout elapsed.
     pub fn wait_timeout_ms(&self, ms: u32) -> bool {
+        self.wait_timeout(Duration::from_millis(ms as u64))
+    }
+
+    /// Waits for all tasks associated with self to complete within the
+    /// specified duration.
+    /// Returns true if the tasks completed or false if the timeout elapsed.
+    pub fn wait_timeout(&self, timeout: Duration) -> bool {
+        let when = time_after_delay(timeout);
         let result = unsafe {
-            let when = dispatch_time(DISPATCH_TIME_NOW, 1000000 * (ms as i64));
             dispatch_group_wait(self.ptr, when)
         };
         result == 0
@@ -577,6 +602,7 @@ unsafe impl Sync for Once { }
 #[cfg(test)]
 mod tests {
     use std::sync::{Arc, Mutex};
+    use std::time::Duration;
     use super::*;
 
     fn async_increment(queue: &Queue, num: &Arc<Mutex<i32>>) {
@@ -625,13 +651,13 @@ mod tests {
         let num = Arc::new(Mutex::new(0));
 
         let num2 = num.clone();
-        q.after_ms(5, move || {
+        q.after(Duration::from_millis(5), move || {
             let mut num = num2.lock().unwrap();
             *num = 1;
         });
 
         // Sleep for the previous block to complete
-        ::std::thread::sleep_ms(10);
+        ::std::thread::sleep(Duration::from_millis(10));
         assert!(*num.lock().unwrap() == 1);
     }
 
@@ -726,7 +752,7 @@ mod tests {
         async_increment(&q, &num);
 
         // Sleep and ensure the work doesn't occur
-        ::std::thread::sleep_ms(5);
+        ::std::thread::sleep(Duration::from_millis(5));
         assert!(*num.lock().unwrap() == 0);
 
         // But ensure the work does complete after we resume
