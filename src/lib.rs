@@ -49,10 +49,10 @@ extern crate libc;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::mem;
+use std::os::raw::{c_long, c_void};
 use std::ptr;
 use std::str;
 use std::time::Duration;
-use libc::{c_long, c_void, size_t};
 
 use ffi::*;
 
@@ -153,15 +153,15 @@ fn context_and_sync_function<F>(closure: &mut Option<F>) ->
 }
 
 fn context_and_apply_function<F>(closure: &F) ->
-        (*mut c_void, extern fn(*mut c_void, size_t))
+        (*mut c_void, extern fn(*mut c_void, usize))
         where F: Fn(usize) {
-    extern fn work_apply_closure<F>(context: &F, iter: size_t)
+    extern fn work_apply_closure<F>(context: &F, iter: usize)
             where F: Fn(usize) {
-        context(iter as usize);
+        context(iter);
     }
 
     let context: *const F = closure;
-    let func: extern fn(&F, size_t) = work_apply_closure::<F>;
+    let func: extern fn(&F, usize) = work_apply_closure::<F>;
     unsafe {
         (context as *mut c_void, mem::transmute(func))
     }
@@ -276,7 +276,7 @@ impl Queue {
             where F: Sync + Fn(usize) {
         let (context, work) = context_and_apply_function(&work);
         unsafe {
-            dispatch_apply_f(iterations as size_t, self.ptr, context, work);
+            dispatch_apply_f(iterations, self.ptr, context, work);
         }
     }
 
@@ -290,7 +290,7 @@ impl Queue {
         };
         let (context, work) = context_and_apply_function(&work);
         unsafe {
-            dispatch_apply_f(slice.len() as size_t, self.ptr, context, work);
+            dispatch_apply_f(slice.len(), self.ptr, context, work);
         }
     }
 
@@ -312,7 +312,7 @@ impl Queue {
         let (context, work) = context_and_apply_function(&work);
         unsafe {
             src.set_len(0);
-            dispatch_apply_f(len as size_t, self.ptr, context, work);
+            dispatch_apply_f(len, self.ptr, context, work);
             dest.set_len(len);
         }
 

@@ -1,7 +1,7 @@
 #![allow(missing_docs)]
 #![allow(non_camel_case_types)]
 
-use libc::{c_char, c_long, c_ulong, c_void, size_t};
+use std::os::raw::{c_char, c_long, c_ulong, c_void};
 
 pub enum dispatch_object_s { }
 
@@ -43,7 +43,7 @@ extern {
     // void dispatch_after ( dispatch_time_t when, dispatch_queue_t queue, dispatch_block_t block );
     pub fn dispatch_after_f(when: dispatch_time_t, queue: dispatch_queue_t, context: *mut c_void, work: dispatch_function_t);
     // void dispatch_apply ( size_t iterations, dispatch_queue_t queue, void (^block)(size_t) );
-    pub fn dispatch_apply_f(iterations: size_t, queue: dispatch_queue_t, context: *mut c_void, work: extern fn(*mut c_void, size_t));
+    pub fn dispatch_apply_f(iterations: usize, queue: dispatch_queue_t, context: *mut c_void, work: extern fn(*mut c_void, usize));
     // void dispatch_once ( dispatch_once_t *predicate, dispatch_block_t block );
     pub fn dispatch_once_f(predicate: *mut dispatch_once_t, context: *mut c_void, function: dispatch_function_t);
 
@@ -144,8 +144,8 @@ pub const DISPATCH_TIME_FOREVER: dispatch_time_t = !0;
 
 #[cfg(test)]
 mod tests {
+    use std::os::raw::c_void;
     use std::ptr;
-    use libc::c_void;
     use super::*;
 
     #[test]
