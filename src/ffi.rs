@@ -1,7 +1,7 @@
 #![allow(missing_docs)]
 #![allow(non_camel_case_types)]
 
-use libc::{c_char, c_long, c_ulong, c_void, size_t, timespec};
+use libc::{c_char, c_long, c_ulong, c_void, size_t};
 
 pub enum dispatch_object_s { }
 
@@ -112,7 +112,7 @@ extern {
     // dispatch_data_t dispatch_data_copy_region ( dispatch_data_t data, size_t location, size_t *offset_ptr );
 
     pub fn dispatch_time(when: dispatch_time_t, delta: i64) -> dispatch_time_t;
-    pub fn dispatch_walltime(when: *const timespec, delta: i64) -> dispatch_time_t;
+    // dispatch_time_t dispatch_walltime( const struct timespec *when, int64_t delta);
 
     // void dispatch_queue_set_specific ( dispatch_queue_t queue, const void *key, void *context, dispatch_function_t destructor );
     // void * dispatch_queue_get_specific ( dispatch_queue_t queue, const void *key );
