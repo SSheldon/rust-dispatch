@@ -114,13 +114,13 @@ pub struct Queue {
 }
 
 fn time_after_delay(delay: Duration) -> dispatch_time_t {
-    match delay.as_secs().checked_mul(1_000_000_000) {
-        Some(i) if i < (i64::max_value() as u64) => {
-            let delta = (i as i64).saturating_add(delay.subsec_nanos() as i64);
-            unsafe { dispatch_time(DISPATCH_TIME_NOW, delta) }
-        }
-        _ => DISPATCH_TIME_FOREVER,
-    }
+    delay.as_secs().checked_mul(1_000_000_000).and_then(|i| {
+        i.checked_add(delay.subsec_nanos() as u64)
+    }).and_then(|i| {
+        if i < (i64::max_value() as u64) { Some(i as i64) } else { None }
+    }).map_or(DISPATCH_TIME_FOREVER, |i| unsafe {
+        dispatch_time(DISPATCH_TIME_NOW, i)
+    })
 }
 
 fn context_and_function<F>(closure: F) -> (*mut c_void, dispatch_function_t)
