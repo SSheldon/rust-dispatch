@@ -71,7 +71,9 @@ impl QueueAttribute {
     fn as_raw(&self) -> dispatch_queue_attr_t {
         match *self {
             QueueAttribute::Serial => DISPATCH_QUEUE_SERIAL,
-            QueueAttribute::Concurrent => DISPATCH_QUEUE_CONCURRENT,
+            QueueAttribute::Concurrent => {
+                dispatch_get_attr_concurrent_queue()
+            }
         }
     }
 }

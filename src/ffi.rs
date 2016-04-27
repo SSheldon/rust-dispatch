@@ -131,8 +131,11 @@ pub fn dispatch_get_main_queue() -> dispatch_queue_t {
     &_dispatch_main_q as *const _ as dispatch_queue_t
 }
 
+pub fn dispatch_get_attr_concurrent_queue() -> dispatch_queue_attr_t {
+    &_dispatch_queue_attr_concurrent
+}
+
 pub const DISPATCH_QUEUE_SERIAL: dispatch_queue_attr_t = 0 as dispatch_queue_attr_t;
-pub static DISPATCH_QUEUE_CONCURRENT: dispatch_queue_attr_t = &_dispatch_queue_attr_concurrent;
 
 pub const DISPATCH_QUEUE_PRIORITY_HIGH: c_long       = 2;
 pub const DISPATCH_QUEUE_PRIORITY_DEFAULT: c_long    = 0;
