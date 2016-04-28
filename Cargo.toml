@@ -11,6 +11,3 @@ documentation = "http://ssheldon.github.io/rust-objc/dispatch/"
 license = "MIT"
 
 exclude = [".gitignore"]
-
-[dependencies]
-libc = ">= 0.1, < 0.3"
