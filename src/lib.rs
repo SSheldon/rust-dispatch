@@ -558,18 +558,23 @@ impl Drop for GroupGuard {
     }
 }
 
-#[allow(dead_code)]
-struct Once {
+/// A predicate used to execute a closure only once for the lifetime of an
+/// application.
+pub struct Once {
     predicate: UnsafeCell<dispatch_once_t>,
 }
 
-#[allow(dead_code)]
 impl Once {
-    // TODO: make this a const fn when the feature is stable
-    pub fn new() -> Once {
+    /// Creates a new `Once`.
+    pub const fn new() -> Once {
         Once { predicate: UnsafeCell::new(0) }
     }
 
+    /// Executes a closure once, ensuring that no other closure has been or
+    /// will be executed by self for the lifetype of the application.
+    ///
+    /// If called simultaneously from multiple threads, waits synchronously
+    // until the work has completed.
     #[inline(always)]
     pub fn call_once<F>(&'static self, work: F) where F: FnOnce() {
         #[cold]
@@ -798,5 +803,14 @@ mod tests {
         assert!(group.is_empty());
         // The notify must have run after the two blocks of the group
         assert_eq!(*num.lock().unwrap(), 10);
+    }
+
+    #[test]
+    fn test_once() {
+        static ONCE: Once = Once::new();
+        let mut num = 0;
+        ONCE.call_once(|| num += 1);
+        ONCE.call_once(|| num += 1);
+        assert!(num == 1);
     }
 }
