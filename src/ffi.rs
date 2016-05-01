@@ -144,12 +144,13 @@ pub const DISPATCH_TIME_FOREVER: dispatch_time_t = !0;
 
 #[cfg(test)]
 mod tests {
-    use std::os::raw::c_void;
-    use std::ptr;
     use super::*;
 
     #[test]
-    fn test_serial_queue() {
+    fn test_ffi_serial_queue() {
+        use std::os::raw::c_void;
+        use std::ptr;
+
         extern fn serial_queue_test_add(num: *mut c_void) {
             unsafe {
                 *(num as *mut u32) = 1;
