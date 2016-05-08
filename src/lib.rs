@@ -600,7 +600,7 @@ unsafe impl Sync for Once { }
 #[cfg(test)]
 mod tests {
     use std::sync::{Arc, Mutex};
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
     use super::*;
 
     fn async_increment(queue: &Queue, num: &Arc<Mutex<i32>>) {
@@ -646,16 +646,22 @@ mod tests {
     #[test]
     fn test_after() {
         let q = Queue::create("", QueueAttribute::Serial);
+        let group = Group::create();
         let num = Arc::new(Mutex::new(0));
 
+        let delay = Duration::from_millis(5);
         let num2 = num.clone();
-        q.after(Duration::from_millis(5), move || {
+        let guard = group.enter();
+        let start = Instant::now();
+        q.after(delay, move || {
             let mut num = num2.lock().unwrap();
             *num = 1;
+            guard.leave();
         });
 
-        // Sleep for the previous block to complete
-        ::std::thread::sleep(Duration::from_millis(50));
+        // Wait for the previous block to complete
+        assert!(group.wait_timeout(Duration::from_millis(5000)));
+        assert!(start.elapsed() >= delay);
         assert!(*num.lock().unwrap() == 1);
     }
 

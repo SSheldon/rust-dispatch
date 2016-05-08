@@ -1,7 +1,7 @@
 extern crate dispatch;
 
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use dispatch::*;
 use dispatch::ffi::*;
