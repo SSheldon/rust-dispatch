@@ -10,4 +10,7 @@ repository = "http://github.com/SSheldon/rust-dispatch"
 documentation = "http://ssheldon.github.io/rust-objc/dispatch/"
 license = "MIT"
 
-exclude = [".gitignore"]
+exclude = [
+  ".gitignore",
+  ".travis.yml",
+]
