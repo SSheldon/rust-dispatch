@@ -655,7 +655,7 @@ mod tests {
         });
 
         // Sleep for the previous block to complete
-        ::std::thread::sleep(Duration::from_millis(10));
+        ::std::thread::sleep(Duration::from_millis(50));
         assert!(*num.lock().unwrap() == 1);
     }
 
@@ -772,6 +772,7 @@ mod tests {
         });
 
         let guard = group.enter();
+        assert!(!group.is_empty());
         let num3 = num.clone();
         q.async(move || {
             let mut num = num3.lock().unwrap();
@@ -787,7 +788,6 @@ mod tests {
             }
         });
 
-        assert!(!group.is_empty());
         group.wait();
         assert!(group.is_empty());
 
