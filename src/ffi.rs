@@ -24,7 +24,10 @@ pub type dispatch_time_t = u64;
 // dispatch_io_interval_flags_t
 pub type dispatch_queue_attr_t = *const dispatch_object_s;
 
-#[link(name = "System", kind = "dylib")]
+#[cfg_attr(any(target_os = "macos", target_os = "ios"),
+           link(name = "System", kind = "dylib"))]
+#[cfg_attr(not(any(target_os = "macos", target_os = "ios")),
+           link(name = "dispatch", kind = "dylib"))]
 extern {
     static _dispatch_main_q: dispatch_object_s;
     static _dispatch_queue_attr_concurrent: dispatch_object_s;

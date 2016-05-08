@@ -66,11 +66,20 @@ pub enum QueueAttribute {
 }
 
 impl QueueAttribute {
+    #[cfg(not(all(test, target_os = "linux")))]
     fn as_raw(&self) -> dispatch_queue_attr_t {
         match *self {
             QueueAttribute::Serial => DISPATCH_QUEUE_SERIAL,
             QueueAttribute::Concurrent => DISPATCH_QUEUE_CONCURRENT,
         }
+    }
+
+    #[cfg(all(test, target_os = "linux"))]
+    fn as_raw(&self) -> dispatch_queue_attr_t {
+        // The Linux tests use Ubuntu's libdispatch-dev package, which is
+        // apparently really old from before OSX 10.7.
+        // Back then, the attr for dispatch_queue_create must be NULL.
+        ptr::null()
     }
 }
 
