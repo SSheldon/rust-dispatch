@@ -617,9 +617,9 @@ mod tests {
         let mut num = 0;
 
         q.sync(|| num = 1);
-        assert!(num == 1);
+        assert_eq!(num, 1);
 
-        assert!(q.sync(|| num) == 1);
+        assert_eq!(q.sync(|| num), 1);
     }
 
     #[test]
@@ -628,7 +628,7 @@ mod tests {
 
         let s = "Hello, world!".to_string();
         let len = q.sync(move || s.len());
-        assert!(len == 13);
+        assert_eq!(len, 13);
     }
 
     #[test]
@@ -640,7 +640,7 @@ mod tests {
 
         // Sync an empty block to ensure the async one finishes
         q.sync(|| ());
-        assert!(*num.lock().unwrap() == 1);
+        assert_eq!(*num.lock().unwrap(), 1);
     }
 
     #[test]
@@ -662,13 +662,13 @@ mod tests {
         // Wait for the previous block to complete
         assert!(group.wait_timeout(Duration::from_millis(5000)));
         assert!(start.elapsed() >= delay);
-        assert!(*num.lock().unwrap() == 1);
+        assert_eq!(*num.lock().unwrap(), 1);
     }
 
     #[test]
     fn test_queue_label() {
         let q = Queue::create("com.example.rust", QueueAttribute::Serial);
-        assert!(q.label() == "com.example.rust");
+        assert_eq!(q.label(), "com.example.rust");
     }
 
     #[test]
@@ -677,7 +677,7 @@ mod tests {
         let num = Arc::new(Mutex::new(0));
 
         q.apply(5, |_| *num.lock().unwrap() += 1);
-        assert!(*num.lock().unwrap() == 5);
+        assert_eq!(*num.lock().unwrap(), 5);
     }
 
     #[test]
@@ -686,7 +686,7 @@ mod tests {
         let mut nums = [0, 1];
 
         q.foreach(&mut nums, |x| *x += 1);
-        assert!(nums == [1, 2]);
+        assert_eq!(nums, [1, 2]);
     }
 
     #[test]
@@ -695,7 +695,7 @@ mod tests {
         let nums = vec![0, 1];
 
         let result = q.map(nums, |x| x + 1);
-        assert!(result == [1, 2]);
+        assert_eq!(result, [1, 2]);
     }
 
     #[test]
@@ -714,13 +714,13 @@ mod tests {
             }
             *num
         });
-        assert!(result == 10);
+        assert_eq!(result, 10);
 
         async_increment(&q, &num);
         async_increment(&q, &num);
 
         q.barrier_sync(|| ());
-        assert!(*num.lock().unwrap() == 12);
+        assert_eq!(*num.lock().unwrap(), 12);
     }
 
     #[test]
@@ -743,7 +743,7 @@ mod tests {
         async_increment(&q, &num);
 
         q.barrier_sync(|| ());
-        assert!(*num.lock().unwrap() == 12);
+        assert_eq!(*num.lock().unwrap(), 12);
     }
 
     #[test]
@@ -757,12 +757,12 @@ mod tests {
 
         // Sleep and ensure the work doesn't occur
         ::std::thread::sleep(Duration::from_millis(5));
-        assert!(*num.lock().unwrap() == 0);
+        assert_eq!(*num.lock().unwrap(), 0);
 
         // But ensure the work does complete after we resume
         guard.resume();
         q.sync(|| ());
-        assert!(*num.lock().unwrap() == 1);
+        assert_eq!(*num.lock().unwrap(), 1);
     }
 
     #[test]
@@ -799,6 +799,6 @@ mod tests {
 
         // Our group is empty, but the notify may not have finished yet
         q.sync(|| ());
-        assert!(*num.lock().unwrap() == 10);
+        assert_eq!(*num.lock().unwrap(), 10);
     }
 }
