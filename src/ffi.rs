@@ -1,10 +1,14 @@
 #![allow(missing_docs)]
 #![allow(non_camel_case_types)]
 
+use libc::uintptr_t;
 use std::os::raw::{c_char, c_long, c_ulong, c_void};
 
 #[repr(C)]
 pub struct dispatch_object_s { _private: [u8; 0] }
+
+#[repr(C)]
+pub struct dispatch_source_type_s { _private: [u8; 0] }
 
 // dispatch_block_t
 pub type dispatch_function_t = extern fn(*mut c_void);
@@ -14,7 +18,8 @@ pub type dispatch_object_t = *mut dispatch_object_s;
 pub type dispatch_once_t = c_long;
 pub type dispatch_queue_t = *mut dispatch_object_s;
 pub type dispatch_time_t = u64;
-// dispatch_source_type_t
+pub type dispatch_source_t = *mut dispatch_object_s;
+pub type dispatch_source_type_t = *const dispatch_source_type_s;
 // dispatch_fd_t
 // dispatch_data_t
 // dispatch_data_applier_t
@@ -77,20 +82,32 @@ extern {
     // void dispatch_barrier_sync ( dispatch_queue_t queue, dispatch_block_t block );
     pub fn dispatch_barrier_sync_f(queue: dispatch_queue_t, context: *mut c_void, work: dispatch_function_t);
 
-    // void dispatch_source_cancel ( dispatch_source_t source );
-    // dispatch_source_t dispatch_source_create ( dispatch_source_type_t type, uintptr_t handle, unsigned long mask, dispatch_queue_t queue );
-    // unsigned long dispatch_source_get_data ( dispatch_source_t source );
-    // uintptr_t dispatch_source_get_handle ( dispatch_source_t source );
-    // unsigned long dispatch_source_get_mask ( dispatch_source_t source );
-    // void dispatch_source_merge_data ( dispatch_source_t source, unsigned long value );
+    static _dispatch_source_type_data_add: dispatch_source_type_s;
+    static _dispatch_source_type_data_or: dispatch_source_type_s;
+    static _dispatch_source_type_mach_send: dispatch_source_type_s;
+    static _dispatch_source_type_mach_recv: dispatch_source_type_s;
+    static _dispatch_source_type_memorypressure: dispatch_source_type_s;
+    static _dispatch_source_type_proc: dispatch_source_type_s;
+    static _dispatch_source_type_read: dispatch_source_type_s;
+    static _dispatch_source_type_signal: dispatch_source_type_s;
+    static _dispatch_source_type_timer: dispatch_source_type_s;
+    static _dispatch_source_type_vnode: dispatch_source_type_s;
+    static _dispatch_source_type_write: dispatch_source_type_s;
+
+    pub fn dispatch_source_cancel(source: dispatch_source_t);
+    pub fn dispatch_source_create(type_: dispatch_source_type_t, handle: uintptr_t, mask: c_ulong, queue: dispatch_queue_t) -> dispatch_source_t;
+    pub fn dispatch_source_get_data(source: dispatch_source_t) -> c_ulong;
+    pub fn dispatch_source_get_handle(source: dispatch_source_t) -> uintptr_t;
+    pub fn dispatch_source_get_mask(source: dispatch_source_t) -> c_ulong;
+    pub fn dispatch_source_merge_data(source: dispatch_source_t, value: c_ulong);
     // void dispatch_source_set_registration_handler ( dispatch_source_t source, dispatch_block_t handler );
-    // void dispatch_source_set_registration_handler_f ( dispatch_source_t source, dispatch_function_t handler );
+    pub fn dispatch_source_set_registration_handler_f(source: dispatch_source_t, handler: dispatch_function_t);
     // void dispatch_source_set_cancel_handler ( dispatch_source_t source, dispatch_block_t handler );
-    // void dispatch_source_set_cancel_handler_f ( dispatch_source_t source, dispatch_function_t handler );
+    pub fn dispatch_source_set_cancel_handler_f(source: dispatch_source_t, handler: dispatch_function_t);
     // void dispatch_source_set_event_handler ( dispatch_source_t source, dispatch_block_t handler );
-    // void dispatch_source_set_event_handler_f ( dispatch_source_t source, dispatch_function_t handler );
-    // void dispatch_source_set_timer ( dispatch_source_t source, dispatch_time_t start, uint64_t interval, uint64_t leeway );
-    // long dispatch_source_testcancel ( dispatch_source_t source );
+    pub fn dispatch_source_set_event_handler_f(source: dispatch_source_t, handler: dispatch_function_t);
+    pub fn dispatch_source_set_timer(source: dispatch_source_t, start: dispatch_time_t, interval: u64, leeway: u64);
+    pub fn dispatch_source_testcancel(source: dispatch_source_t) -> c_long;
 
     // void dispatch_read ( dispatch_fd_t fd, size_t length, dispatch_queue_t queue, void (^handler)(dispatch_data_t data, int error) );
     // void dispatch_write ( dispatch_fd_t fd, dispatch_data_t data, dispatch_queue_t queue, void (^handler)(dispatch_data_t data, int error) );
@@ -145,6 +162,49 @@ pub const DISPATCH_QUEUE_PRIORITY_BACKGROUND: c_long = -1 << 15;
 
 pub const DISPATCH_TIME_NOW: dispatch_time_t     = 0;
 pub const DISPATCH_TIME_FOREVER: dispatch_time_t = !0;
+
+pub type dispatch_source_mach_send_flags_t = c_ulong;
+
+pub const DISPATCH_MACH_SEND_DEAD: dispatch_source_mach_send_flags_t = 1;
+
+pub type dispatch_source_memorypressure_flags_t = c_ulong;
+
+pub const DISPATCH_MEMORYPRESSURE_NORMAL:   dispatch_source_memorypressure_flags_t = 0x1;
+pub const DISPATCH_MEMORYPRESSURE_WARN:     dispatch_source_memorypressure_flags_t = 0x2;
+pub const DISPATCH_MEMORYPRESSURE_CRITICAL: dispatch_source_memorypressure_flags_t = 0x4;
+
+pub type dispatch_source_proc_flags_t = c_ulong;
+
+pub const DISPATCH_PROC_EXIT:   dispatch_source_proc_flags_t = 0x80000000;
+pub const DISPATCH_PROC_FORK:   dispatch_source_proc_flags_t = 0x40000000;
+pub const DISPATCH_PROC_EXEC:   dispatch_source_proc_flags_t = 0x20000000;
+pub const DISPATCH_PROC_SIGNAL: dispatch_source_proc_flags_t = 0x08000000;
+
+pub type dispatch_source_timer_flags_t = c_ulong;
+
+pub const DISPATCH_TIMER_STRICT: dispatch_source_timer_flags_t = 0x1;
+
+pub type dispatch_source_vnode_flags_t = c_ulong;
+
+pub const DISPATCH_VNODE_DELETE: dispatch_source_vnode_flags_t = 0x1;
+pub const DISPATCH_VNODE_WRITE:  dispatch_source_vnode_flags_t = 0x2;
+pub const DISPATCH_VNODE_EXTEND: dispatch_source_vnode_flags_t = 0x4;
+pub const DISPATCH_VNODE_ATTRIB: dispatch_source_vnode_flags_t = 0x8;
+pub const DISPATCH_VNODE_LINK:   dispatch_source_vnode_flags_t = 0x10;
+pub const DISPATCH_VNODE_RENAME: dispatch_source_vnode_flags_t = 0x20;
+pub const DISPATCH_VNODE_REVOKE: dispatch_source_vnode_flags_t = 0x40;
+
+pub static DISPATCH_SOURCE_TYPE_DATA_ADD:       &'static dispatch_source_type_s = &_dispatch_source_type_data_add;
+pub static DISPATCH_SOURCE_TYPE_DATA_OR:        &'static dispatch_source_type_s = &_dispatch_source_type_data_or;
+pub static DISPATCH_SOURCE_TYPE_MACH_SEND:      &'static dispatch_source_type_s = &_dispatch_source_type_mach_send;
+pub static DISPATCH_SOURCE_TYPE_MACH_RECV:      &'static dispatch_source_type_s = &_dispatch_source_type_mach_recv;
+pub static DISPATCH_SOURCE_TYPE_MEMORYPRESSURE: &'static dispatch_source_type_s = &_dispatch_source_type_memorypressure;
+pub static DISPATCH_SOURCE_TYPE_PROC:           &'static dispatch_source_type_s = &_dispatch_source_type_proc;
+pub static DISPATCH_SOURCE_TYPE_READ:           &'static dispatch_source_type_s = &_dispatch_source_type_read;
+pub static DISPATCH_SOURCE_TYPE_SIGNAL:         &'static dispatch_source_type_s = &_dispatch_source_type_signal;
+pub static DISPATCH_SOURCE_TYPE_TIMER:          &'static dispatch_source_type_s = &_dispatch_source_type_timer;
+pub static DISPATCH_SOURCE_TYPE_VNODE:          &'static dispatch_source_type_s = &_dispatch_source_type_vnode;
+pub static DISPATCH_SOURCE_TYPE_WRITE:          &'static dispatch_source_type_s = &_dispatch_source_type_write;
 
 #[cfg(test)]
 mod tests {

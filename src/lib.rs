@@ -44,10 +44,14 @@ assert!(nums[0] == "2");
 
 #![warn(missing_docs)]
 
+#[macro_use]
+extern crate bitflags;
+extern crate libc;
+
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::mem;
-use std::os::raw::{c_long, c_void};
+use std::os::raw::{c_long, c_ulong, c_void};
 use std::ptr;
 use std::str;
 use std::time::Duration;
@@ -56,6 +60,9 @@ use ffi::*;
 
 /// Raw foreign function interface for libdispatch.
 pub mod ffi;
+
+/// Source types.
+pub mod source;
 
 /// The type of a dispatch queue.
 #[derive(Clone, Debug, Hash, PartialEq)]
@@ -122,10 +129,14 @@ pub struct Queue {
     ptr: dispatch_queue_t,
 }
 
+fn duration_nanos(duration: Duration) -> Option<u64> {
+    duration.as_secs().checked_mul(1_000_000_000).and_then(|i| {
+        i.checked_add(duration.subsec_nanos() as u64)
+    })
+}
+
 fn time_after_delay(delay: Duration) -> dispatch_time_t {
-    delay.as_secs().checked_mul(1_000_000_000).and_then(|i| {
-        i.checked_add(delay.subsec_nanos() as u64)
-    }).and_then(|i| {
+    duration_nanos(delay).and_then(|i| {
         if i < (i64::max_value() as u64) { Some(i as i64) } else { None }
     }).map_or(DISPATCH_TIME_FOREVER, |i| unsafe {
         dispatch_time(DISPATCH_TIME_NOW, i)
@@ -390,6 +401,12 @@ impl Queue {
     }
 }
 
+impl Suspend for Queue {
+    fn as_raw_suspend_object(&self) -> dispatch_object_t {
+        self.ptr
+    }
+}
+
 unsafe impl Sync for Queue { }
 unsafe impl Send for Queue { }
 
@@ -410,33 +427,46 @@ impl Drop for Queue {
     }
 }
 
-/// An RAII guard which will resume a suspended `Queue` when dropped.
+trait Suspend: Clone {
+    fn as_raw_suspend_object(&self) -> dispatch_object_t;
+}
+
+/// An RAII guard which will resume a suspended `Queue` or `Source` when dropped.
 pub struct SuspendGuard {
-    queue: Queue,
+    ptr: dispatch_object_t,
 }
 
 impl SuspendGuard {
-    fn new(queue: &Queue) -> SuspendGuard {
+    fn new<T: Suspend>(object: &T) -> SuspendGuard {
+        let ptr = object.as_raw_suspend_object();
         unsafe {
-            dispatch_suspend(queue.ptr);
+            dispatch_retain(ptr);
+            dispatch_suspend(ptr);
         }
-        SuspendGuard { queue: queue.clone() }
+        SuspendGuard { ptr: ptr }
     }
 
-    /// Drops self, allowing the suspended `Queue` to resume.
+    /// Drops self, allowing the suspended object to resume.
     pub fn resume(self) { }
+}
+
+impl Suspend for SuspendGuard {
+    fn as_raw_suspend_object(&self) -> dispatch_object_t {
+        self.ptr
+    }
 }
 
 impl Clone for SuspendGuard {
     fn clone(&self) -> Self {
-        SuspendGuard::new(&self.queue)
+        SuspendGuard::new(self)
     }
 }
 
 impl Drop for SuspendGuard {
     fn drop(&mut self) {
         unsafe {
-            dispatch_resume(self.queue.ptr);
+            dispatch_resume(self.ptr);
+            dispatch_release(self.ptr);
         }
     }
 }
@@ -608,9 +638,266 @@ impl Once {
 
 unsafe impl Sync for Once { }
 
+use source::SourceType;
+
+/// A builder used to create `Source`s.
+pub struct SourceBuilder<T> {
+    source_: Source<T>,
+}
+
+impl<T: SourceType> SourceBuilder<T> {
+    /// Start creating a new source. Returns None if the source could not be created.
+    pub fn new(source_type: T, target_queue: &Queue) -> Option<Self> {
+        Source::create(source_type, target_queue).map(|s| SourceBuilder { source_: s })
+    }
+}
+
+impl<T> SourceBuilder<T> {
+    /// Sets a registration handler on the source.
+    pub fn registration_handler<F>(&mut self, handler: F) where F: 'static + Send + FnOnce(Source<T>) {
+        self.source_.set_registration_handler(handler);
+    }
+
+    /// Sets a cancelation handler on the source.
+    pub fn cancel_handler<F>(&mut self, handler: F) where F: 'static + Send + FnOnce(Source<T>) {
+        self.source_.set_cancel_handler(handler);
+    }
+
+    /// Sets an event handler on the source.
+    pub fn event_handler<F>(&mut self, handler: F) where F: 'static + Send + Fn(Source<T>) {
+        self.source_.set_event_handler(handler);
+    }
+
+    /// Starts the source.
+    pub fn resume(self) -> Source<T> {
+        unsafe { dispatch_resume(self.source_.ptr); }
+        self.source_
+    }
+}
+
+struct BoxedOnceHandler<T> {
+    ptr: *mut c_void,
+    caller: fn(&mut BoxedOnceHandler<T>, Option<T>),
+}
+
+impl<T> BoxedOnceHandler<T> {
+    fn new<F: FnOnce(T)>(f: F) -> BoxedOnceHandler<T> {
+        let ptr: *mut Option<F> = Box::into_raw(Box::new(Some(f)));
+        BoxedOnceHandler {
+            ptr: ptr as *mut c_void,
+            caller: Self::caller::<F>,
+        }
+    }
+
+    fn caller<F: FnOnce(T)>(&mut self, value: Option<T>) {
+        if self.ptr.is_null() {
+            return;
+        }
+        unsafe {
+            let mut f: Box<Option<F>> = Box::from_raw(self.ptr as *mut Option<F>);
+            self.ptr = ptr::null_mut();
+            if let Some(x) = value {
+                f.take().unwrap()(x);
+            }
+        }
+    }
+
+    fn call(mut self, value: T) {
+        (self.caller)(&mut self, Some(value));
+    }
+}
+
+impl<T> Drop for BoxedOnceHandler<T> {
+    fn drop(&mut self) {
+        if !self.ptr.is_null() {
+            (self.caller)(self, None);
+        }
+    }
+}
+
+struct SourceContext<T> {
+    registration: Option<BoxedOnceHandler<Source<T>>>,
+    cancel: Option<BoxedOnceHandler<Source<T>>>,
+    event: Option<Box<Fn(Source<T>) + Send>>,
+    source_ptr: dispatch_source_t, // unretained
+}
+
+impl<T> SourceContext<T> {
+    fn new(source: dispatch_source_t) -> Self {
+        SourceContext {
+            registration: None,
+            cancel: None,
+            event: None,
+            source_ptr: source,
+        }
+    }
+}
+
+/// Source type specific data.
+pub type SourceData = c_ulong;
+
+/// A Grand Central Dispatch source. Create with a `SourceBuilder`.
+pub struct Source<T> {
+    ptr: dispatch_source_t,
+    source_type: ::std::marker::PhantomData<T>,
+}
+
+impl<T: SourceType> Source<T> {
+    /// Creates a new source.
+    fn create(source_type: T, target_queue: &Queue) -> Option<Self> {
+        unsafe {
+            let (type_, handle, mask) = source_type.as_raw();
+            let ptr = dispatch_source_create(type_, handle, mask, target_queue.ptr);
+            if ptr.is_null() {
+                return None;
+            }
+
+            let source_handlers = Box::into_raw(Box::new(SourceContext::<T>::new(ptr)));
+            extern fn source_handlers_finalizer<T>(ptr: *mut c_void) {
+                let _ = unsafe { Box::from_raw(ptr as *mut SourceContext<T>) };
+            }
+            dispatch_set_finalizer_f(ptr, source_handlers_finalizer::<T>);
+            dispatch_set_context(ptr, source_handlers as *mut c_void);
+            Some(Source { ptr: ptr, source_type: ::std::marker::PhantomData })
+        }
+    }
+}
+
+impl<T> Source<T> {
+    unsafe fn from_raw(ptr: dispatch_source_t) -> Self {
+        dispatch_retain(ptr);
+        Source { ptr: ptr, source_type: ::std::marker::PhantomData }
+    }
+
+    unsafe fn context(&self) -> &mut SourceContext<T> {
+        &mut *(dispatch_get_context(self.ptr) as *mut SourceContext<T>)
+    }
+
+    fn set_registration_handler<F>(&self, handler: F)
+        where F: 'static + Send + FnOnce(Source<T>)
+    {
+        // is only run once per source
+        extern fn source_handler<F: FnOnce(Source<T>), T>(ptr: *mut c_void) {
+            unsafe {
+                let ctx = ptr as *mut SourceContext<T>;
+                if let Some(f) = (*ctx).registration.take() {
+                    f.call(Source::from_raw((*ctx).source_ptr));
+                }
+            }
+        }
+        unsafe {
+            self.context().registration = Some(BoxedOnceHandler::new(handler));
+            dispatch_source_set_registration_handler_f(self.ptr, source_handler::<F, T>);
+        }
+    }
+
+    fn set_cancel_handler<F>(&self, handler: F)
+        where F: 'static + Send + FnOnce(Source<T>)
+    {
+        // is only run once per source
+        extern fn source_handler<F: FnOnce(Source<T>), T>(ptr: *mut c_void) {
+            unsafe {
+                let ctx = ptr as *mut SourceContext<T>;
+                if let Some(f) = (*ctx).cancel.take() {
+                    f.call(Source::from_raw((*ctx).source_ptr));
+                }
+            }
+        }
+        unsafe {
+            self.context().cancel = Some(BoxedOnceHandler::new(handler));
+            dispatch_source_set_cancel_handler_f(self.ptr, source_handler::<F, T>);
+        }
+    }
+
+    fn set_event_handler<F>(&self, handler: F)
+        where F: 'static + Send + Fn(Source<T>)
+    {
+        extern fn source_handler<T>(ptr: *mut c_void) {
+            let ctx = ptr as *mut SourceContext<T>;
+            unsafe {
+                (*ctx).event.as_ref().expect("event handler exists")
+                    (Source::from_raw((*ctx).source_ptr));
+            }
+        }
+        unsafe {
+            self.context().event = Some(Box::new(handler));
+            dispatch_source_set_event_handler_f(self.ptr, source_handler::<T>);
+        }
+    }
+
+    /// Returns source type specific data.
+    pub fn data(&self) -> SourceData {
+        unsafe { dispatch_source_get_data(self.ptr) }
+    }
+
+    /// Suspends the invocation of blocks on self and returns a `SuspendGuard`
+    pub fn suspend(&self) -> SuspendGuard {
+        SuspendGuard::new(self)
+    }
+
+    /// Cancels the source.
+    pub fn cancel(&self) {
+        unsafe {
+            dispatch_source_cancel(self.ptr);
+        }
+    }
+
+    /// Returns true if the source is canceled.
+    pub fn is_canceled(&self) -> bool {
+        unsafe { dispatch_source_testcancel(self.ptr) != 0 }
+    }
+}
+
+impl Source<source::Timer> {
+    /// Sets or resets the source's timer.
+    pub fn set_timer_after(&self, start: Duration, interval: Duration, leeway: Duration) {
+        let start = time_after_delay(start);
+        let interval = duration_nanos(interval).unwrap();
+        let leeway = duration_nanos(leeway).unwrap();
+        unsafe {
+            dispatch_source_set_timer(self.ptr, start, interval, leeway);
+        }
+    }
+}
+
+impl<T: source::DataSourceType> Source<T> {
+    /// Merges an integer into a `DataAnd` or `DataOr` source.
+    pub fn merge_data(&self, value: SourceData) {
+        unsafe {
+            dispatch_source_merge_data(self.ptr, value);
+        }
+    }
+}
+
+impl<T> Suspend for Source<T> {
+    fn as_raw_suspend_object(&self) -> dispatch_object_t {
+        self.ptr
+    }
+}
+
+unsafe impl<T> Sync for Source<T> { }
+unsafe impl<T> Send for Source<T> { }
+
+impl<T> Clone for Source<T> {
+    fn clone(&self) -> Self {
+        unsafe {
+            dispatch_retain(self.ptr);
+        }
+        Source { ptr: self.ptr, source_type: ::std::marker::PhantomData }
+    }
+}
+
+impl<T> Drop for Source<T> {
+    fn drop(&mut self) {
+        unsafe {
+            dispatch_release(self.ptr);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex};
+    use std::sync::{Arc, Barrier, Mutex};
     use std::time::{Duration, Instant};
     use super::*;
 
@@ -812,5 +1099,81 @@ mod tests {
         assert!(group.is_empty());
         // The notify must have run after the two blocks of the group
         assert_eq!(*num.lock().unwrap(), 10);
+    }
+
+    #[test]
+    fn test_source() {
+        let reg_barrier = Arc::new(Barrier::new(2));
+        let event_barrier = Arc::new(Barrier::new(2));
+        let cancel_barrier = Arc::new(Barrier::new(2));
+        let num = Arc::new(Mutex::new(0));
+        let sum = Arc::new(Mutex::new(0));
+
+        let reg_num = num.clone();
+        let reg_handler_barrier = reg_barrier.clone();
+        let ev_num = num.clone();
+        let ev_sum = sum.clone();
+        let event_handler_barrier = event_barrier.clone();
+        let cancel_num = num.clone();
+        let cancel_handler_barrier = cancel_barrier.clone();
+
+        let q = Queue::create("", QueueAttribute::Serial);
+        let mut sb = SourceBuilder::new(source::DataAdd, &q).unwrap();
+        sb.registration_handler(move |_| {
+            let mut num = reg_num.lock().unwrap();
+            *num |= 1;
+            reg_handler_barrier.wait();
+        });
+        sb.event_handler(move |source| {
+            let mut num = ev_num.lock().unwrap();
+            let mut sum = ev_sum.lock().unwrap();
+            *sum += source.data();
+            *num |= 2;
+            event_handler_barrier.wait();
+        });
+        sb.cancel_handler(move |_| {
+            let mut num = cancel_num.lock().unwrap();
+            *num |= 4;
+            cancel_handler_barrier.wait();
+        });
+        let source = sb.resume();
+
+        reg_barrier.wait();
+        source.merge_data(3);
+        event_barrier.wait();
+        assert_eq!(*sum.lock().unwrap(), 3);
+        source.merge_data(5);
+        event_barrier.wait();
+        assert_eq!(*sum.lock().unwrap(), 8);
+        source.cancel();
+        cancel_barrier.wait();
+        assert_eq!(*num.lock().unwrap(), 7);
+    }
+
+    #[test]
+    fn test_source_timer() {
+        let event_barrier = Arc::new(Barrier::new(2));
+        let event_handler_barrier = event_barrier.clone();
+        let num = Arc::new(Mutex::new(0));
+        let ev_num = num.clone();
+
+        let q = Queue::create("", QueueAttribute::Serial);
+        let mut sb = SourceBuilder::new(source::Timer { flags: source::TimerFlags::empty() }, &q).unwrap();
+        sb.event_handler(move |source| {
+            let mut num = ev_num.lock().unwrap();
+            *num |= 1;
+            source.cancel();
+            event_handler_barrier.wait();
+        });
+        let source = sb.resume();
+
+        source.set_timer_after(
+            Duration::from_millis(0),
+            Duration::from_millis(10000),
+            Duration::from_millis(1000));
+
+        event_barrier.wait();
+        assert_eq!(*num.lock().unwrap(), 1);
+        assert!(source.is_canceled());
     }
 }
