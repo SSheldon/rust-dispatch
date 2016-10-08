@@ -40,6 +40,24 @@ assert!(nums == [2, 3]);
 let nums = queue.map(nums, |x| x.to_string());
 assert!(nums[0] == "2");
 ```
+
+# Sources
+
+Dispatch sources monitor system objects and deliver events to a target queue.
+
+```
+use dispatch::{Queue, QueueAttribute, SourceBuilder};
+use dispatch::source::{Proc, PROC_FORK};
+
+let pid = 123;
+let queue = Queue::create("com.example.rust", QueueAttribute::Serial);
+let mut source_builder = SourceBuilder::new(
+    Proc { pid: pid, flags: PROC_FORK }, &queue).unwrap();
+source_builder.event_handler(|source| {
+    // process 123 forked
+});
+let source = source_builder.resume();
+```
 */
 
 #![warn(missing_docs)]
