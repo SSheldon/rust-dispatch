@@ -653,11 +653,6 @@ impl<T: SourceType> SourceBuilder<T> {
 }
 
 impl<T> SourceBuilder<T> {
-    /// Sets a registration handler on the source.
-    pub fn registration_handler<F>(&mut self, handler: F) where F: 'static + Send + FnOnce(Source<T>) {
-        self.source_.set_registration_handler(handler);
-    }
-
     /// Sets a cancelation handler on the source.
     pub fn cancel_handler<F>(&mut self, handler: F) where F: 'static + Send + FnOnce(Source<T>) {
         self.source_.set_cancel_handler(handler);
@@ -716,7 +711,6 @@ impl<T> Drop for BoxedOnceHandler<T> {
 }
 
 struct SourceContext<T> {
-    registration: Option<BoxedOnceHandler<Source<T>>>,
     cancel: Option<BoxedOnceHandler<Source<T>>>,
     event: Option<Box<Fn(Source<T>) + Send>>,
     source_ptr: dispatch_source_t, // unretained
@@ -725,7 +719,6 @@ struct SourceContext<T> {
 impl<T> SourceContext<T> {
     fn new(source: dispatch_source_t) -> Self {
         SourceContext {
-            registration: None,
             cancel: None,
             event: None,
             source_ptr: source,
@@ -771,24 +764,6 @@ impl<T> Source<T> {
 
     unsafe fn context(&self) -> &mut SourceContext<T> {
         &mut *(dispatch_get_context(self.ptr) as *mut SourceContext<T>)
-    }
-
-    fn set_registration_handler<F>(&self, handler: F)
-        where F: 'static + Send + FnOnce(Source<T>)
-    {
-        // is only run once per source
-        extern fn source_handler<F: FnOnce(Source<T>), T>(ptr: *mut c_void) {
-            unsafe {
-                let ctx = ptr as *mut SourceContext<T>;
-                if let Some(f) = (*ctx).registration.take() {
-                    f.call(Source::from_raw((*ctx).source_ptr));
-                }
-            }
-        }
-        unsafe {
-            self.context().registration = Some(BoxedOnceHandler::new(handler));
-            dispatch_source_set_registration_handler_f(self.ptr, source_handler::<F, T>);
-        }
     }
 
     fn set_cancel_handler<F>(&self, handler: F)
@@ -1103,14 +1078,11 @@ mod tests {
 
     #[test]
     fn test_source() {
-        let reg_barrier = Arc::new(Barrier::new(2));
         let event_barrier = Arc::new(Barrier::new(2));
         let cancel_barrier = Arc::new(Barrier::new(2));
         let num = Arc::new(Mutex::new(0));
         let sum = Arc::new(Mutex::new(0));
 
-        let reg_num = num.clone();
-        let reg_handler_barrier = reg_barrier.clone();
         let ev_num = num.clone();
         let ev_sum = sum.clone();
         let event_handler_barrier = event_barrier.clone();
@@ -1119,26 +1091,20 @@ mod tests {
 
         let q = Queue::create("", QueueAttribute::Serial);
         let mut sb = SourceBuilder::new(source::DataAdd, &q).unwrap();
-        sb.registration_handler(move |_| {
-            let mut num = reg_num.lock().unwrap();
-            *num |= 1;
-            reg_handler_barrier.wait();
-        });
         sb.event_handler(move |source| {
             let mut num = ev_num.lock().unwrap();
             let mut sum = ev_sum.lock().unwrap();
             *sum += source.data();
-            *num |= 2;
+            *num |= 1;
             event_handler_barrier.wait();
         });
         sb.cancel_handler(move |_| {
             let mut num = cancel_num.lock().unwrap();
-            *num |= 4;
+            *num |= 2;
             cancel_handler_barrier.wait();
         });
         let source = sb.resume();
 
-        reg_barrier.wait();
         source.merge_data(3);
         event_barrier.wait();
         assert_eq!(*sum.lock().unwrap(), 3);
@@ -1147,7 +1113,7 @@ mod tests {
         assert_eq!(*sum.lock().unwrap(), 8);
         source.cancel();
         cancel_barrier.wait();
-        assert_eq!(*num.lock().unwrap(), 7);
+        assert_eq!(*num.lock().unwrap(), 3);
     }
 
     #[test]

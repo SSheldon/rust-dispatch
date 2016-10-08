@@ -101,7 +101,7 @@ extern {
     pub fn dispatch_source_get_mask(source: dispatch_source_t) -> c_ulong;
     pub fn dispatch_source_merge_data(source: dispatch_source_t, value: c_ulong);
     // void dispatch_source_set_registration_handler ( dispatch_source_t source, dispatch_block_t handler );
-    pub fn dispatch_source_set_registration_handler_f(source: dispatch_source_t, handler: dispatch_function_t);
+    // void dispatch_source_set_registration_handler_f ( dispatch_source_t source, dispatch_function_t handler );
     // void dispatch_source_set_cancel_handler ( dispatch_source_t source, dispatch_block_t handler );
     pub fn dispatch_source_set_cancel_handler_f(source: dispatch_source_t, handler: dispatch_function_t);
     // void dispatch_source_set_event_handler ( dispatch_source_t source, dispatch_block_t handler );
