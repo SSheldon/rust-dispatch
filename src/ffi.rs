@@ -131,11 +131,11 @@ extern {
 }
 
 pub fn dispatch_get_main_queue() -> dispatch_queue_t {
-    &_dispatch_main_q as *const _ as dispatch_queue_t
+    unsafe { &_dispatch_main_q as *const _ as dispatch_queue_t }
 }
 
 pub const DISPATCH_QUEUE_SERIAL: dispatch_queue_attr_t = 0 as dispatch_queue_attr_t;
-pub static DISPATCH_QUEUE_CONCURRENT: &'static dispatch_object_s = &_dispatch_queue_attr_concurrent;
+pub static DISPATCH_QUEUE_CONCURRENT: &'static dispatch_object_s = unsafe { &_dispatch_queue_attr_concurrent };
 
 pub const DISPATCH_QUEUE_PRIORITY_HIGH: c_long       = 2;
 pub const DISPATCH_QUEUE_PRIORITY_DEFAULT: c_long    = 0;
