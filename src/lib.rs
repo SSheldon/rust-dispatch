@@ -58,6 +58,7 @@ use ffi::*;
 pub mod ffi;
 
 /// The type of a dispatch queue.
+#[derive(Clone, Debug, Hash, PartialEq)]
 pub enum QueueAttribute {
     /// The queue executes blocks serially in FIFO order.
     Serial,
@@ -84,6 +85,7 @@ impl QueueAttribute {
 }
 
 /// The priority of a global concurrent queue.
+#[derive(Clone, Debug, Hash, PartialEq)]
 pub enum QueuePriority {
     /// The queue is scheduled for execution before any default priority or low
     /// priority queue.

@@ -1,6 +1,6 @@
 [package]
 name = "dispatch"
-version = "0.1.2"
+version = "0.1.3"
 authors = ["Steven Sheldon"]
 
 description = "Rust wrapper for Apple's Grand Central Dispatch."
