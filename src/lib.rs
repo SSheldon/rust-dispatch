@@ -797,19 +797,20 @@ mod tests {
             guard.leave();
         });
 
+        let notify_group = Group::create();
+        let guard = notify_group.enter();
         let num4 = num.clone();
         group.notify(&q, move || {
             let mut num = num4.lock().unwrap();
-            if *num == 2 {
-                *num = 10;
-            }
+            *num *= 5;
+            guard.leave();
         });
 
-        group.wait();
+        // Wait for the notify block to finish
+        notify_group.wait();
+        // If the notify ran, the group should be empty
         assert!(group.is_empty());
-
-        // Our group is empty, but the notify may not have finished yet
-        q.sync(|| ());
+        // The notify must have run after the two blocks of the group
         assert_eq!(*num.lock().unwrap(), 10);
     }
 }
