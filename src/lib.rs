@@ -311,7 +311,7 @@ impl Queue {
         let len = src.len();
         let src_ptr = src.as_ptr();
 
-        let mut dest = Vec::with_capacity(len);
+        let mut dest: Vec<U> = Vec::with_capacity(len);
         let dest_ptr = dest.as_mut_ptr();
 
         let work = move |i| unsafe {
