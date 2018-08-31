@@ -68,14 +68,18 @@ use ffi::*;
 pub mod ffi;
 
 mod blk;
+#[cfg(target_os = "macos")]
 mod data;
+#[cfg(target_os = "macos")]
 mod io;
 
 pub use blk::{perform, DispatchBlock, WaitTimeout};
+#[cfg(target_os = "macos")]
 pub use data::{
     dispatch_data_destructor_default, dispatch_data_destructor_free,
     dispatch_data_destructor_munmap, Data, Destructor,
 };
+#[cfg(target_os = "macos")]
 pub use ffi::{DISPATCH_IO_STOP, DISPATCH_IO_STRICT_INTERVAL};
 
 /// The type of a dispatch queue.
