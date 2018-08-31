@@ -17,3 +17,12 @@ exclude = [
   "travis_test.sh",
   "tests-ios/**",
 ]
+
+[dependencies]
+log = "0.4"
+libc = "0.2"
+block = "0.1"
+
+[dev-dependencies]
+pretty_env_logger = "0.2"
+tempfile = "3.0"
