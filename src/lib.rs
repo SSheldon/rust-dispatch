@@ -67,12 +67,14 @@ use ffi::*;
 /// Raw foreign function interface for libdispatch.
 pub mod ffi;
 
+#[cfg(target_os = "macos")]
 mod blk;
 #[cfg(target_os = "macos")]
 mod data;
 #[cfg(target_os = "macos")]
 mod io;
 
+#[cfg(target_os = "macos")]
 pub use blk::{perform, DispatchBlock, WaitTimeout};
 #[cfg(target_os = "macos")]
 pub use data::{
