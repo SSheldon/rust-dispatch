@@ -27,8 +27,6 @@ impl ChannelType {
     }
 }
 
-pub type CleanupHandler = fn(i32);
-
 pub struct Channel {
     ptr: dispatch_io_t,
 }

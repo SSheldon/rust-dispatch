@@ -73,9 +73,12 @@ mod blk;
 mod data;
 #[cfg(target_os = "macos")]
 mod io;
+#[cfg(target_os = "macos")]
+mod sem;
+mod time;
 
 #[cfg(target_os = "macos")]
-pub use blk::{perform, DispatchBlock, WaitTimeout};
+pub use blk::{perform, DispatchBlock};
 #[cfg(target_os = "macos")]
 pub use data::{
     dispatch_data_destructor_default, dispatch_data_destructor_free,
@@ -83,6 +86,9 @@ pub use data::{
 };
 #[cfg(target_os = "macos")]
 pub use ffi::{DISPATCH_IO_STOP, DISPATCH_IO_STRICT_INTERVAL};
+#[cfg(target_os = "macos")]
+pub use sem::Semaphore;
+pub use time::{after, at, now, Timeout, WaitTimeout};
 
 /// The type of a dispatch queue.
 #[derive(Clone, Debug, Hash, PartialEq)]
@@ -147,28 +153,6 @@ impl QueuePriority {
 /// https://developer.apple.com/library/mac/documentation/Performance/Reference/GCD_libdispatch_Ref/index.html).
 pub struct Queue {
     ptr: dispatch_queue_t,
-}
-
-fn time_after_delay(delay: Duration) -> dispatch_time_t {
-    delay
-        .as_secs()
-        .checked_mul(1_000_000_000)
-        .and_then(|i| i.checked_add(delay.subsec_nanos() as u64))
-        .and_then(|i| {
-            if i < (i64::max_value() as u64) {
-                Some(i as i64)
-            } else {
-                None
-            }
-        })
-        .map_or(DISPATCH_TIME_FOREVER, |i| unsafe {
-            dispatch_time(DISPATCH_TIME_NOW, i)
-        })
-}
-
-/// Returns a `dispatch_time_t` corresponding to the wall time.
-pub fn now() -> dispatch_time_t {
-    unsafe { dispatch_walltime(ptr::null(), 0) }
 }
 
 fn context_and_function<F>(closure: F) -> (*mut c_void, dispatch_function_t)
@@ -325,11 +309,12 @@ impl Queue {
 
     /// After the specified delay, submits a closure for asynchronous execution
     /// on self.
-    pub fn after<F>(&self, delay: Duration, work: F)
+    pub fn after<F, T>(&self, delay: T, work: F)
     where
         F: 'static + Send + FnOnce(),
+        T: Timeout,
     {
-        let when = time_after_delay(delay);
+        let when = delay.as_raw();
         let (context, work) = context_and_function(work);
         unsafe {
             dispatch_after_f(when, self.ptr, context, work);
@@ -581,8 +566,8 @@ impl Group {
     /// Waits for all tasks associated with self to complete within the
     /// specified duration.
     /// Returns true if the tasks completed or false if the timeout elapsed.
-    pub fn wait_timeout(&self, timeout: Duration) -> bool {
-        let when = time_after_delay(timeout);
+    pub fn wait_timeout<T: Timeout>(&self, timeout: T) -> bool {
+        let when = timeout.as_raw();
         let result = unsafe { dispatch_group_wait(self.ptr, when) };
         result == 0
     }

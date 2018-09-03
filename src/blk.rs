@@ -1,12 +1,7 @@
 use std::os::raw::c_void;
-use std::time::Duration;
 
 use ffi::*;
-use {time_after_delay, Queue};
-
-/// A type indicating whether a timed wait on a dispatch block returned due to a time out or not.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct WaitTimeout;
+use {Queue, Timeout, WaitTimeout};
 
 /// Creates, synchronously executes, and releases a dispatch block from the specified block and flags.
 pub fn perform<F>(flags: dispatch_block_flags_t, closure: F)
@@ -58,8 +53,8 @@ impl DispatchBlock {
     }
 
     /// Waits synchronously until execution of the specified dispatch block has completed or until the specified timeout has elapsed.
-    pub fn wait_timeout(&self, dur: Duration) -> Result<(), WaitTimeout> {
-        let when = time_after_delay(dur);
+    pub fn wait_timeout<T: Timeout>(&self, timeout: T) -> Result<(), WaitTimeout> {
+        let when = timeout.as_raw();
 
         if unsafe { dispatch_block_wait(self.ptr, when) } == 0 {
             Ok(())
@@ -142,19 +137,13 @@ mod tests {
 
         assert!(!block.canceled());
 
-        assert_eq!(
-            block.wait_timeout(Duration::from_millis(100)),
-            Err(WaitTimeout)
-        );
+        assert_eq!(block.wait_timeout(100u32), Err(WaitTimeout));
 
         block.cancel();
 
         assert!(block.canceled());
 
-        assert_eq!(
-            block.wait_timeout(Duration::from_millis(100)),
-            Err(WaitTimeout)
-        );
+        assert_eq!(block.wait_timeout(100u32), Err(WaitTimeout));
 
         assert!(!block.done());
     }

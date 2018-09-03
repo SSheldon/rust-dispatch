@@ -8,11 +8,11 @@ use Queue;
 
 /// The destructor responsible for freeing the data when it is no longer needed.
 pub trait Destructor {
+    /// Extracts the raw `dispatch_block_t`.
     fn as_raw(self) -> dispatch_block_t;
 }
 
 impl Destructor for dispatch_block_t {
-    /// Extracts the raw destructor object.
     fn as_raw(self) -> dispatch_block_t {
         self
     }
@@ -81,7 +81,7 @@ impl Data {
         Data { ptr }
     }
 
-    /// Extracts the raw dispatch data object.
+    /// Extracts the raw `dispatch_data_t`.
     pub fn as_raw(&self) -> dispatch_data_t {
         self.ptr
     }
@@ -98,6 +98,7 @@ impl Data {
         unsafe { dispatch_data_get_size(self.ptr) }
     }
 
+    /// Returns `true` if the data has a length of 0.
     pub fn is_empty(&self) -> bool {
         self.ptr == unsafe { &_dispatch_data_empty as *const dispatch_object_s as dispatch_data_t }
             || self.len() == 0
