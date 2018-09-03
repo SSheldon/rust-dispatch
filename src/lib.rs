@@ -73,6 +73,7 @@ mod blk;
 mod data;
 #[cfg(target_os = "macos")]
 mod io;
+mod qos;
 #[cfg(target_os = "macos")]
 mod sem;
 mod time;
@@ -86,17 +87,42 @@ pub use data::{
 };
 #[cfg(target_os = "macos")]
 pub use ffi::{DISPATCH_IO_STOP, DISPATCH_IO_STRICT_INTERVAL};
+pub use qos::QosClass;
 #[cfg(target_os = "macos")]
 pub use sem::Semaphore;
 pub use time::{after, at, now, Timeout, WaitTimeout};
 
 /// The type of a dispatch queue.
-#[derive(Clone, Debug, Hash, PartialEq)]
+#[derive(Debug, Hash, PartialEq)]
 pub enum QueueAttribute {
     /// The queue executes blocks serially in FIFO order.
     Serial,
     /// The queue executes blocks concurrently.
     Concurrent,
+    /// Attribute for dispatch queues.
+    Value(dispatch_queue_attr_t),
+}
+
+impl Clone for QueueAttribute {
+    fn clone(&self) -> Self {
+        match *self {
+            QueueAttribute::Serial => QueueAttribute::Serial,
+            QueueAttribute::Concurrent => QueueAttribute::Concurrent,
+            QueueAttribute::Value(attr) => {
+                unsafe { dispatch_retain(attr as *mut _) };
+
+                QueueAttribute::Value(attr)
+            }
+        }
+    }
+}
+
+impl Drop for QueueAttribute {
+    fn drop(&mut self) {
+        if let &mut QueueAttribute::Value(attr) = self {
+            unsafe { dispatch_release(attr as *mut _) }
+        }
+    }
 }
 
 impl QueueAttribute {
@@ -105,6 +131,7 @@ impl QueueAttribute {
         match *self {
             QueueAttribute::Serial => DISPATCH_QUEUE_SERIAL,
             QueueAttribute::Concurrent => DISPATCH_QUEUE_CONCURRENT,
+            QueueAttribute::Value(attr) => attr,
         }
     }
 
@@ -114,6 +141,30 @@ impl QueueAttribute {
         // apparently really old from before OSX 10.7.
         // Back then, the attr for dispatch_queue_create must be NULL.
         ptr::null()
+    }
+
+    /// Returns an attribute value which may be provided to `Queue::create` or `Queue::with_target_queue`,
+    /// in order to make the created queue initially inactive.
+    #[cfg(target_os = "macos")]
+    pub fn inactive(self) -> Self {
+        let attr = unsafe { dispatch_queue_attr_make_initially_inactive(self.as_raw()) };
+
+        QueueAttribute::Value(attr)
+    }
+
+    /// Returns an attribute value which may be provided to `Queue::create` or `Queue::with_target_queue`,
+    /// in order to assign a QOS class and relative priority to the queue.
+    #[cfg(target_os = "macos")]
+    pub fn with_qos_class(self, qos_class: QosClass, relative_priority: i32) -> Self {
+        let attr = unsafe {
+            dispatch_queue_attr_make_with_qos_class(
+                self.as_raw(),
+                qos_class as dispatch_qos_class_t,
+                relative_priority,
+            )
+        };
+
+        QueueAttribute::Value(attr)
     }
 }
 
@@ -261,6 +312,16 @@ impl Queue {
             CStr::from_ptr(label_ptr)
         };
         str::from_utf8(label.to_bytes()).unwrap()
+    }
+
+    /// Returns the QOS class and relative priority of the given queue.
+    pub fn qos_class(&self) -> (QosClass, i32) {
+        let mut relative_priority = 0;
+
+        let qos_class =
+            unsafe { dispatch_queue_get_qos_class(self.ptr, &mut relative_priority) }.into();
+
+        (qos_class, relative_priority)
     }
 
     /// Submits a closure for execution on self and waits until it completes.
@@ -696,7 +757,23 @@ mod tests {
 
         q.sync(|| num = 1);
         assert_eq!(num, 1);
+        assert_eq!(q.qos_class(), (QosClass::Unspecified, 0));
 
+        assert_eq!(q.sync(|| num), 1);
+    }
+
+    #[test]
+    fn test_serial_queue_with_qos_class() {
+        let q = Queue::create(
+            "",
+            QueueAttribute::Serial.with_qos_class(QosClass::UserInteractive, 0),
+        );
+        let mut num = 0;
+
+        q.sync(|| num = 1);
+        assert_eq!(num, 1);
+
+        assert_eq!(q.qos_class(), (QosClass::UserInteractive, 0));
         assert_eq!(q.sync(|| num), 1);
     }
 

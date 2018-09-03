@@ -1,6 +1,6 @@
 #![allow(missing_docs, non_camel_case_types, improper_ctypes)]
 
-use std::os::raw::{c_char, c_int, c_long, c_ulong, c_void};
+use std::os::raw::{c_char, c_int, c_long, c_uint, c_ulong, c_void};
 
 use block::{Block, BlockArguments, ConcreteBlock, IntoConcreteBlock};
 use libc::{mode_t, off_t, timespec};
@@ -42,7 +42,7 @@ pub type dispatch_io_close_flags_t = u64;
 pub type dispatch_io_interval_flags_t = u64;
 pub type dispatch_queue_attr_t = *const dispatch_object_s;
 pub type dispatch_block_flags_t = u64;
-pub type dispatch_qos_class_t = u64;
+pub type dispatch_qos_class_t = c_uint;
 
 #[cfg_attr(any(target_os = "macos", target_os = "ios"), link(name = "System", kind = "dylib"))]
 #[cfg_attr(
@@ -58,13 +58,28 @@ extern "C" {
     pub fn _Block_copy(block: *const c_void) -> *mut c_void;
     pub fn _Block_release(block: *mut c_void);
 
+    pub fn qos_class_self() -> dispatch_qos_class_t;
+    pub fn qos_class_main() -> dispatch_qos_class_t;
+
+    pub fn dispatch_queue_attr_make_initially_inactive(
+        attr: dispatch_queue_attr_t,
+    ) -> dispatch_queue_attr_t;
+    pub fn dispatch_queue_attr_make_with_qos_class(
+        attr: dispatch_queue_attr_t,
+        qos_class: dispatch_qos_class_t,
+        relative_priority: c_int,
+    ) -> dispatch_queue_attr_t;
+
     pub fn dispatch_get_global_queue(identifier: c_long, flags: c_ulong) -> dispatch_queue_t;
     pub fn dispatch_queue_create(
         label: *const c_char,
         attr: dispatch_queue_attr_t,
     ) -> dispatch_queue_t;
-    // dispatch_queue_attr_t dispatch_queue_attr_make_with_qos_class ( dispatch_queue_attr_t attr, dispatch_qos_class_t qos_class, int relative_priority );
     pub fn dispatch_queue_get_label(queue: dispatch_queue_t) -> *const c_char;
+    pub fn dispatch_queue_get_qos_class(
+        queue: dispatch_queue_t,
+        relative_priority_ptr: *mut c_int,
+    ) -> dispatch_qos_class_t;
     pub fn dispatch_set_target_queue(object: dispatch_object_t, queue: dispatch_queue_t);
     pub fn dispatch_main();
 
@@ -279,6 +294,13 @@ extern "C" {
 pub fn dispatch_get_main_queue() -> dispatch_queue_t {
     unsafe { &_dispatch_main_q as *const _ as dispatch_queue_t }
 }
+
+pub const QOS_CLASS_USER_INTERACTIVE: dispatch_qos_class_t = 0x21;
+pub const QOS_CLASS_USER_INITIATED: dispatch_qos_class_t = 0x19;
+pub const QOS_CLASS_DEFAULT: dispatch_qos_class_t = 0x15;
+pub const QOS_CLASS_UTILITY: dispatch_qos_class_t = 0x11;
+pub const QOS_CLASS_BACKGROUND: dispatch_qos_class_t = 0x09;
+pub const QOS_CLASS_UNSPECIFIED: dispatch_qos_class_t = 0x00;
 
 pub const DISPATCH_QUEUE_SERIAL: dispatch_queue_attr_t = 0 as dispatch_queue_attr_t;
 pub static DISPATCH_QUEUE_CONCURRENT: &'static dispatch_object_s =
