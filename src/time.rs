@@ -1,7 +1,7 @@
 use std::ptr;
 use std::time::{Duration, Instant, SystemTime, SystemTimeError, UNIX_EPOCH};
 
-use libc::timespec;
+use libc::{c_long, time_t, timespec};
 
 use ffi::*;
 
@@ -88,8 +88,8 @@ pub fn now() -> dispatch_time_t {
 pub fn at(tm: SystemTime) -> Result<dispatch_time_t, SystemTimeError> {
     let dur = tm.duration_since(UNIX_EPOCH)?;
     let ts = timespec {
-        tv_sec: dur.as_secs() as i64,
-        tv_nsec: dur.subsec_nanos() as i64,
+        tv_sec: dur.as_secs() as time_t,
+        tv_nsec: dur.subsec_nanos() as c_long,
     };
 
     Ok(unsafe { dispatch_walltime(&ts, 0) })
