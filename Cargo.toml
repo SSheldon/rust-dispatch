@@ -18,6 +18,9 @@ exclude = [
   "tests-ios/**",
 ]
 
+[package.metadata.docs.rs]
+default-target = "stable-x86_64-apple-darwin"
+
 [dependencies]
 log = "0.4"
 bitflags = "1.0"
@@ -27,3 +30,4 @@ block = "0.1"
 [dev-dependencies]
 pretty_env_logger = "0.2"
 tempfile = "3.0"
+
