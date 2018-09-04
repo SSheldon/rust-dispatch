@@ -7,41 +7,53 @@ use ffi::*;
 use Queue;
 
 /// The destructor responsible for freeing the data when it is no longer needed.
-pub trait Destructor {
-    /// Extracts the raw `dispatch_block_t`.
-    fn as_raw(self) -> dispatch_block_t;
+pub trait IntoDestructor {
+    /// Consumes the `Destructor`, returning the raw `dispatch_block_t`.
+    fn into_raw(self) -> dispatch_block_t;
 }
 
-impl Destructor for dispatch_block_t {
-    fn as_raw(self) -> dispatch_block_t {
+impl IntoDestructor for dispatch_block_t {
+    fn into_raw(self) -> dispatch_block_t {
         self
     }
 }
 
-impl<F: 'static + Fn()> Destructor for F {
-    fn as_raw(self) -> dispatch_block_t {
+impl<F: 'static + Fn()> IntoDestructor for F {
+    fn into_raw(self) -> dispatch_block_t {
         block(self)
     }
 }
 
-/// The default destructor for dispatch data objects.
-/// Used at data object creation to indicate that the supplied buffer
-/// should be copied into internal storage managed by the system.
-pub fn dispatch_data_destructor_default() -> dispatch_block_t {
-    ptr::null()
+/// The build-in destructor responsible for freeing the data when it is no longer needed.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Destructor {
+    /// The default destructor for dispatch data objects.
+    /// Used at data object creation to indicate that the supplied buffer
+    /// should be copied into internal storage managed by the system.
+    Default,
+    /// The destructor for dispatch data objects created from a malloc'd buffer.
+    /// Used at data object creation to indicate that the supplied buffer
+    /// was allocated by the malloc() family and should be destroyed with free(3).
+    Free,
+    /// The destructor for dispatch data objects that have been created
+    /// from buffers that require deallocation with munmap(2).
+    Munmap,
 }
 
-/// The destructor for dispatch data objects created from a malloc'd buffer.
-/// Used at data object creation to indicate that the supplied buffer
-/// was allocated by the malloc() family and should be destroyed with free(3).
-pub fn dispatch_data_destructor_free() -> dispatch_block_t {
-    unsafe { _dispatch_data_destructor_free }
+impl Default for Destructor {
+    fn default() -> Self {
+        Destructor::Default
+    }
 }
 
-/// The destructor for dispatch data objects that have been created
-/// from buffers that require deallocation with munmap(2).
-pub fn dispatch_data_destructor_munmap() -> dispatch_block_t {
-    unsafe { _dispatch_data_destructor_free }
+impl IntoDestructor for Destructor {
+    fn into_raw(self) -> dispatch_block_t {
+        match self {
+            Destructor::Default => ptr::null(),
+            Destructor::Free => unsafe { _dispatch_data_destructor_free },
+            Destructor::Munmap => unsafe { _dispatch_data_destructor_free },
+        }
+    }
 }
 
 /// An immutable object representing a contiguous or sparse region of memory.
@@ -67,14 +79,14 @@ impl Data {
     }
 
     /// Creates a new dispatch data object with the specified memory buffer and destructor.
-    pub fn create_with_destructor<F: Destructor>(
+    pub fn create_with_destructor<F: IntoDestructor>(
         queue: &Queue,
         buffer: *const c_void,
         size: usize,
         destructor: F,
     ) -> Self {
         let ptr =
-            unsafe { dispatch_data_create(buffer, size, queue.as_raw(), destructor.as_raw()) };
+            unsafe { dispatch_data_create(buffer, size, queue.as_raw(), destructor.into_raw()) };
 
         debug!("create data with {} bytes, data: {:?}", size, ptr);
 
@@ -288,7 +300,7 @@ mod tests {
         let queue = Queue::main();
         let p = unsafe { libc::malloc(8) } as *const c_void;
 
-        let data = Data::create_with_destructor(&queue, p, 8, dispatch_data_destructor_free());
+        let data = Data::create_with_destructor(&queue, p, 8, Destructor::Free);
 
         assert_eq!(data.len(), 8);
 

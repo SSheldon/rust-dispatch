@@ -1,5 +1,7 @@
+use std::os::raw::c_long;
+
 use ffi::*;
-use {Timeout, WaitTimeout};
+use {IntoTimeout, WaitTimeout};
 
 /// A counting semaphore.
 ///
@@ -18,7 +20,7 @@ impl Semaphore {
     /// Passing a value greater than zero is useful for managing a finite pool of resources,
     /// where the pool size is equal to the value.
     pub fn new(n: u64) -> Self {
-        let ptr = unsafe { dispatch_semaphore_create(n as i64) };
+        let ptr = unsafe { dispatch_semaphore_create(n as c_long) };
 
         Semaphore { ptr }
     }
@@ -33,8 +35,8 @@ impl Semaphore {
     /// Wait (decrement) for a semaphoreor until the specified timeout has elapsed.
     ///
     /// Decrement the counting semaphore.
-    pub fn wait_timeout<T: Timeout>(&self, timeout: T) -> Result<(), WaitTimeout> {
-        let when = timeout.as_raw();
+    pub fn wait_timeout<T: IntoTimeout>(&self, timeout: T) -> Result<(), WaitTimeout> {
+        let when = timeout.into_raw();
 
         let n = unsafe { dispatch_semaphore_wait(self.ptr, when) };
 

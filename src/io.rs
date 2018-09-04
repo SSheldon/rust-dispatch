@@ -12,21 +12,36 @@ use libc::{mode_t, off_t};
 use ffi::*;
 use {Data, Queue};
 
-#[derive(Clone, Debug)]
-pub enum ChannelType {
-    Stream,
-    Random,
-}
-
-impl ChannelType {
-    pub fn as_raw(&self) -> dispatch_io_type_t {
-        match self {
-            ChannelType::Stream => DISPATCH_IO_STREAM,
-            ChannelType::Random => DISPATCH_IO_RANDOM,
-        }
+bitflags! {
+    /// The type of flags you can set on a `Channel::close()` call
+    pub struct CloseFlags: dispatch_io_close_flags_t {
+        /// Stop outstanding operations on a channel when the channel is closed.
+        const STOP = DISPATCH_IO_STOP;
     }
 }
 
+bitflags! {
+    /// Type of flags to set on `Channel::set_interval()` call
+    pub struct IntervalFlags: dispatch_io_interval_flags_t {
+        /// Enqueue I/O handlers at a channel's interval setting
+        /// even if the amount of data ready to be delivered is inferior to
+        /// the low water mark (or zero).
+        const STRICT_INTERVAL = DISPATCH_IO_STRICT_INTERVAL;
+    }
+}
+
+/// The type of a dispatch I/O channel.
+#[cfg_attr(target_os = "macos", repr(u64))]
+#[cfg_attr(target_os = "ios", repr(u32))]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ChannelType {
+    /// A dispatch I/O channel representing a stream of bytes.
+    Stream = DISPATCH_IO_STREAM,
+    /// A dispatch I/O channel representing a random access file.
+    Random = DISPATCH_IO_RANDOM,
+}
+
+/// A dispatch I/O channel represents the asynchronous I/O policy applied to a file descriptor.
 pub struct Channel {
     ptr: dispatch_io_t,
 }
@@ -52,7 +67,7 @@ impl Channel {
 
         let ptr = unsafe {
             dispatch_io_create(
-                channel_type.as_raw(),
+                channel_type as dispatch_io_type_t,
                 fd,
                 queue.ptr,
                 cleanup_handler.map_or(ptr::null(), block),
@@ -97,7 +112,7 @@ impl Channel {
         let s = unsafe { CStr::from_bytes_with_nul_unchecked(&v) };
         let ptr = unsafe {
             dispatch_io_create_with_path(
-                channel_type.as_raw(),
+                channel_type as dispatch_io_type_t,
                 s.as_ptr(),
                 flags,
                 mode,
@@ -121,7 +136,7 @@ impl Channel {
     ///
     /// The new channel inherits the file descriptor or path name associated with the existing channel,
     /// but not its channel type or policies.
-    pub fn open_stream<H>(&self, queue: &Queue, cleanup_handler: Option<H>) -> Self
+    pub fn open_as_stream<H>(&self, queue: &Queue, cleanup_handler: Option<H>) -> Self
     where
         H: 'static + Fn(i32),
     {
@@ -148,7 +163,7 @@ impl Channel {
     ///
     /// The new channel inherits the file descriptor or path name associated with the existing channel,
     /// but not its channel type or policies.
-    pub fn open_file<H>(&self, queue: &Queue, cleanup_handler: Option<H>) -> Self
+    pub fn open_as_file<H>(&self, queue: &Queue, cleanup_handler: Option<H>) -> Self
     where
         H: 'static + Fn(i32),
     {
@@ -174,9 +189,9 @@ impl Channel {
     /// Schedule a read operation for asynchronous execution on the specified I/O channel.
     /// The I/O handler is enqueued one or more times depending on the general load of the system
     /// and the policy specified on the I/O channel.
-    pub fn read<H>(&self, offset: isize, length: usize, queue: &Queue, io_handler: H)
+    pub fn async_read<H>(&self, offset: isize, length: usize, queue: &Queue, io_handler: H)
     where
-        H: 'static + Fn(io::Result<Data>),
+        H: 'static + Fn(io::Result<(Data, bool)>),
     {
         debug!(
             "read {} bytes at offset {}, channel: {:?}",
@@ -185,14 +200,14 @@ impl Channel {
 
         let fd = self.descriptor();
         let handler = block(move |done: bool, ptr: dispatch_data_t, error: i32| {
-            let result = if done {
+            let result = if error == 0 {
                 unsafe { dispatch_retain(ptr) };
 
                 let data = Data::borrow(ptr);
 
                 trace!("read {} bytes with fd: {:?}", data.len(), fd);
 
-                Ok(data)
+                Ok((data, done))
             } else {
                 trace!("read failed, error: {}", error);
 
@@ -208,9 +223,9 @@ impl Channel {
     /// Schedule a write operation for asynchronous execution on the specified I/O channel.
     /// The I/O handler is enqueued one or more times depending on the general load of the system
     /// and the policy specified on the I/O channel.
-    pub fn write<H>(&self, offset: isize, data: &Data, queue: &Queue, io_handler: H)
+    pub fn async_write<H>(&self, offset: isize, data: &Data, queue: &Queue, io_handler: H)
     where
-        H: 'static + Fn(io::Result<Data>),
+        H: 'static + Fn(io::Result<(Data, bool)>),
     {
         debug!(
             "write {} bytes at offset {}, channel: {:?}",
@@ -230,7 +245,7 @@ impl Channel {
                     data.len()
                 );
 
-                Ok(data)
+                Ok((data, done))
             } else {
                 trace!("write failed, error: {}", error);
 
@@ -253,10 +268,10 @@ impl Channel {
 
     /// Close the specified I/O channel to new read or write operations;
     /// scheduling operations on a closed channel results in their handler returning an error.
-    pub fn close(&self, flags: dispatch_io_close_flags_t) {
+    pub fn close(&self, flags: CloseFlags) {
         debug!("close channel: {:?}", self.ptr);
 
-        unsafe { dispatch_io_close(self.ptr, flags) }
+        unsafe { dispatch_io_close(self.ptr, flags.bits()) }
     }
 
     /// Schedule a barrier operation on the specified I/O channel;
@@ -301,7 +316,7 @@ impl Channel {
 
     /// Set a interval at which I/O handlers are to be enqueued
     /// on the I/O channel for all operations.
-    pub fn set_interval(&self, internal: Duration, flags: dispatch_io_interval_flags_t) {
+    pub fn set_interval(&self, internal: Duration, flags: IntervalFlags) {
         debug!("set internal to {:?}, channel: {:?}", internal, self.ptr);
 
         unsafe {
@@ -312,7 +327,7 @@ impl Channel {
                     .checked_mul(1_000_000_000)
                     .and_then(|dur| dur.checked_add(internal.subsec_nanos() as u64))
                     .unwrap_or(u64::max_value()),
-                flags,
+                flags.bits(),
             )
         }
     }
@@ -374,7 +389,7 @@ impl Queue {
     /// Schedule a read operation for asynchronous execution on the specified file descriptor.
     /// The specified handler is enqueued with the data read from the file descriptor
     /// when the operation has completed or an error occurs.
-    pub fn read<F, H>(&self, f: &F, length: usize, handler: H)
+    pub fn async_read<F, H>(&self, f: &F, length: usize, handler: H)
     where
         F: AsRawFd,
         H: 'static + Fn(io::Result<Data>),
@@ -404,7 +419,7 @@ impl Queue {
 
     /// Schedule a write operation for asynchronous execution on the specified file descriptor.
     /// The specified handler is enqueued when the operation has completed or an error occurs.
-    pub fn write<F, H>(&self, f: &F, data: &Data, handler: H)
+    pub fn async_write<F, H>(&self, f: &F, data: &Data, handler: H)
     where
         F: AsRawFd,
         H: 'static + Fn(io::Result<Data>),
@@ -459,13 +474,18 @@ mod tests {
 
         let data = q.data(b"hello world");
 
-        c.write(0, &data, &q, move |result| {
-            assert!(result.unwrap().is_empty());
+        c.async_write(0, &data, &q, move |result| match result {
+            Ok((data, done)) => {
+                assert!(data.is_empty());
+                assert!(done);
+            }
+            Err(err) => warn!("write channel failed, {}", err),
         });
 
-        c.read(0, 5, &q, move |result| match result {
-            Ok(data) => {
+        c.async_read(0, 5, &q, move |result| match result {
+            Ok((data, done)) => {
                 assert_eq!(data.len(), 5);
+                assert!(done);
             }
             Err(err) => warn!("read channel failed, {}", err),
         });
@@ -482,7 +502,7 @@ mod tests {
 
         trace!("sync up channel finished");
 
-        c.close(0);
+        c.close(CloseFlags::empty());
     }
 
     #[test]
@@ -497,7 +517,7 @@ mod tests {
 
         let barrier = Arc::new(Barrier::new(2));
         let b = barrier.clone();
-        q.read(&f, 5, move |result| {
+        q.async_read(&f, 5, move |result| {
             match result {
                 Ok(data) => {
                     assert_eq!(data.len(), 5);

@@ -1,67 +1,85 @@
-use std::ptr;
+use std::error::Error;
+use std::fmt;
 use std::time::{Duration, Instant, SystemTime, SystemTimeError, UNIX_EPOCH};
 
 use libc::{c_long, time_t, timespec};
 
 use ffi::*;
 
+/// A `dispatch_time_t` corresponding to the current time.
+pub const NOW: dispatch_time_t = DISPATCH_TIME_NOW;
+/// A `dispatch_time_t` corresponding to the maximum time.
+pub const FOREVER: dispatch_time_t = DISPATCH_TIME_FOREVER;
+
 /// A type indicating whether a timed wait on a dispatch object returned due to a time out or not.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct WaitTimeout;
 
-/// When to timeout.
-pub trait Timeout {
-    /// Extracts the raw `dispatch_time_t`.
-    fn as_raw(self) -> dispatch_time_t;
+impl fmt::Display for WaitTimeout {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "operation time out")
+    }
 }
 
-impl<T: Timeout> Timeout for Option<T> {
-    fn as_raw(self) -> dispatch_time_t {
+impl Error for WaitTimeout {
+    fn description(&self) -> &str {
+        "operation time out"
+    }
+}
+
+/// When to timeout.
+pub trait IntoTimeout {
+    /// Consumes the `IntoTimeout`, returning the raw `dispatch_time_t`.
+    fn into_raw(self) -> dispatch_time_t;
+}
+
+impl<T: IntoTimeout> IntoTimeout for Option<T> {
+    fn into_raw(self) -> dispatch_time_t {
         if let Some(timeout) = self {
-            timeout.as_raw()
+            timeout.into_raw()
         } else {
             DISPATCH_TIME_NOW
         }
     }
 }
 
-impl Timeout for i32 {
-    fn as_raw(self) -> dispatch_time_t {
-        Duration::from_millis(self as u64).as_raw()
+impl IntoTimeout for i32 {
+    fn into_raw(self) -> dispatch_time_t {
+        Duration::from_millis(self as u64).into_raw()
     }
 }
 
-impl Timeout for u32 {
-    fn as_raw(self) -> dispatch_time_t {
-        Duration::from_millis(self as u64).as_raw()
+impl IntoTimeout for u32 {
+    fn into_raw(self) -> dispatch_time_t {
+        Duration::from_millis(self as u64).into_raw()
     }
 }
 
-impl Timeout for Duration {
-    fn as_raw(self) -> dispatch_time_t {
+impl IntoTimeout for Duration {
+    fn into_raw(self) -> dispatch_time_t {
         after(self)
     }
 }
 
-impl Timeout for dispatch_time_t {
-    fn as_raw(self) -> dispatch_time_t {
+impl IntoTimeout for dispatch_time_t {
+    fn into_raw(self) -> dispatch_time_t {
         self
     }
 }
 
-impl Timeout for Instant {
-    fn as_raw(self) -> dispatch_time_t {
-        self.duration_since(Instant::now()).as_raw()
+impl IntoTimeout for Instant {
+    fn into_raw(self) -> dispatch_time_t {
+        self.duration_since(Instant::now()).into_raw()
     }
 }
 
-impl Timeout for SystemTime {
-    fn as_raw(self) -> dispatch_time_t {
-        self.duration_since(SystemTime::now()).unwrap().as_raw()
+impl IntoTimeout for SystemTime {
+    fn into_raw(self) -> dispatch_time_t {
+        self.duration_since(SystemTime::now()).unwrap().into_raw()
     }
 }
 
-/// Returns a `dispatch_time_t` corresponding to the given time.
+/// Returns a `dispatch_time_t` corresponding to the given duration.
 pub fn after(delay: Duration) -> dispatch_time_t {
     delay
         .as_secs()
@@ -77,11 +95,6 @@ pub fn after(delay: Duration) -> dispatch_time_t {
         .map_or(DISPATCH_TIME_FOREVER, |i| unsafe {
             dispatch_time(DISPATCH_TIME_NOW, i)
         })
-}
-
-/// Returns a `dispatch_time_t` corresponding to the wall time.
-pub fn now() -> dispatch_time_t {
-    unsafe { dispatch_walltime(ptr::null(), 0) }
 }
 
 /// Returns a `dispatch_time_t` corresponding to the given time.

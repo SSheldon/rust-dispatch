@@ -48,6 +48,8 @@ extern crate block;
 extern crate libc;
 #[macro_use]
 extern crate log;
+#[macro_use]
+extern crate bitflags;
 
 #[cfg(test)]
 extern crate pretty_env_logger;
@@ -67,30 +69,27 @@ use ffi::*;
 /// Raw foreign function interface for libdispatch.
 pub mod ffi;
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 mod blk;
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 mod data;
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 mod io;
 mod qos;
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 mod sem;
 mod time;
 
-#[cfg(target_os = "macos")]
-pub use blk::{perform, DispatchBlock};
-#[cfg(target_os = "macos")]
-pub use data::{
-    dispatch_data_destructor_default, dispatch_data_destructor_free,
-    dispatch_data_destructor_munmap, Data, Destructor,
-};
-#[cfg(target_os = "macos")]
-pub use ffi::{DISPATCH_IO_STOP, DISPATCH_IO_STRICT_INTERVAL};
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+pub use blk::{perform, BlockFlags, DispatchBlock};
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+pub use data::{Data, Destructor, IntoDestructor};
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+pub use io::{Channel, ChannelType, CloseFlags, IntervalFlags};
 pub use qos::QosClass;
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 pub use sem::Semaphore;
-pub use time::{after, at, now, Timeout, WaitTimeout};
+pub use time::{after, at, IntoTimeout, WaitTimeout, FOREVER, NOW};
 
 /// The type of a dispatch queue.
 #[derive(Debug, Hash, PartialEq)]
@@ -145,7 +144,7 @@ impl QueueAttribute {
 
     /// Returns an attribute value which may be provided to `Queue::create` or `Queue::with_target_queue`,
     /// in order to make the created queue initially inactive.
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     pub fn inactive(self) -> Self {
         let attr = unsafe { dispatch_queue_attr_make_initially_inactive(self.as_raw()) };
 
@@ -154,7 +153,7 @@ impl QueueAttribute {
 
     /// Returns an attribute value which may be provided to `Queue::create` or `Queue::with_target_queue`,
     /// in order to assign a QOS class and relative priority to the queue.
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     pub fn with_qos_class(self, qos_class: QosClass, relative_priority: i32) -> Self {
         let attr = unsafe {
             dispatch_queue_attr_make_with_qos_class(
@@ -315,6 +314,7 @@ impl Queue {
     }
 
     /// Returns the QOS class and relative priority of the given queue.
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     pub fn qos_class(&self) -> (QosClass, i32) {
         let mut relative_priority = 0;
 
@@ -373,9 +373,9 @@ impl Queue {
     pub fn after<F, T>(&self, delay: T, work: F)
     where
         F: 'static + Send + FnOnce(),
-        T: Timeout,
+        T: IntoTimeout,
     {
-        let when = delay.as_raw();
+        let when = delay.into_raw();
         let (context, work) = context_and_function(work);
         unsafe {
             dispatch_after_f(when, self.ptr, context, work);
@@ -627,8 +627,8 @@ impl Group {
     /// Waits for all tasks associated with self to complete within the
     /// specified duration.
     /// Returns true if the tasks completed or false if the timeout elapsed.
-    pub fn wait_timeout<T: Timeout>(&self, timeout: T) -> bool {
-        let when = timeout.as_raw();
+    pub fn wait_timeout<T: IntoTimeout>(&self, timeout: T) -> bool {
+        let when = timeout.into_raw();
         let result = unsafe { dispatch_group_wait(self.ptr, when) };
         result == 0
     }
@@ -757,11 +757,11 @@ mod tests {
 
         q.sync(|| num = 1);
         assert_eq!(num, 1);
-        assert_eq!(q.qos_class(), (QosClass::Unspecified, 0));
 
         assert_eq!(q.sync(|| num), 1);
     }
 
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     #[test]
     fn test_serial_queue_with_qos_class() {
         let q = Queue::create(

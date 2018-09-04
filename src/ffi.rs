@@ -29,7 +29,7 @@ pub type dispatch_once_t = c_long;
 pub type dispatch_queue_t = *mut dispatch_object_s;
 pub type dispatch_time_t = u64;
 // dispatch_source_type_t
-pub type dispatch_fd_t = u64;
+pub type dispatch_fd_t = c_int;
 pub type dispatch_data_handler_t = *const Block<(dispatch_data_t, c_int), ()>;
 pub type dispatch_data_t = *mut dispatch_object_s;
 pub type dispatch_data_applier_t =
@@ -37,11 +37,11 @@ pub type dispatch_data_applier_t =
 pub type dispatch_io_t = *mut dispatch_object_s;
 pub type dispatch_io_handler_t = *const Block<(bool, dispatch_data_t, c_int), ()>;
 pub type dispatch_cleanup_handler_t = *const Block<(c_int,), ()>;
-pub type dispatch_io_type_t = u64;
-pub type dispatch_io_close_flags_t = u64;
-pub type dispatch_io_interval_flags_t = u64;
+pub type dispatch_io_type_t = c_ulong;
+pub type dispatch_io_close_flags_t = c_ulong;
+pub type dispatch_io_interval_flags_t = c_ulong;
 pub type dispatch_queue_attr_t = *const dispatch_object_s;
-pub type dispatch_block_flags_t = u64;
+pub type dispatch_block_flags_t = c_ulong;
 pub type dispatch_qos_class_t = c_uint;
 
 #[cfg_attr(any(target_os = "macos", target_os = "ios"), link(name = "System", kind = "dylib"))]
@@ -83,40 +83,48 @@ extern "C" {
     pub fn dispatch_set_target_queue(object: dispatch_object_t, queue: dispatch_queue_t);
     pub fn dispatch_main();
 
-    // void dispatch_async ( dispatch_queue_t queue, dispatch_block_t block );
+    pub fn dispatch_async(queue: dispatch_queue_t, block: dispatch_block_t);
     pub fn dispatch_async_f(
         queue: dispatch_queue_t,
         context: *mut c_void,
         work: dispatch_function_t,
     );
-    // void dispatch_sync ( dispatch_queue_t queue, dispatch_block_t block );
+    pub fn dispatch_sync(queue: dispatch_queue_t, block: dispatch_block_t);
     pub fn dispatch_sync_f(
         queue: dispatch_queue_t,
         context: *mut c_void,
         work: dispatch_function_t,
     );
-    // void dispatch_after ( dispatch_time_t when, dispatch_queue_t queue, dispatch_block_t block );
+    pub fn dispatch_after(when: dispatch_time_t, queue: dispatch_queue_t, block: dispatch_block_t);
     pub fn dispatch_after_f(
         when: dispatch_time_t,
         queue: dispatch_queue_t,
         context: *mut c_void,
         work: dispatch_function_t,
     );
-    // void dispatch_apply ( size_t iterations, dispatch_queue_t queue, void (^block)(size_t) );
+    pub fn dispatch_apply(
+        iterations: usize,
+        queue: dispatch_queue_t,
+        block: *const Block<(usize,), ()>,
+    );
     pub fn dispatch_apply_f(
         iterations: usize,
         queue: dispatch_queue_t,
         context: *mut c_void,
         work: extern "C" fn(*mut c_void, usize),
     );
-    // void dispatch_once ( dispatch_once_t *predicate, dispatch_block_t block );
+    pub fn dispatch_once(predicate: *mut dispatch_once_t, block: dispatch_block_t);
     pub fn dispatch_once_f(
         predicate: *mut dispatch_once_t,
         context: *mut c_void,
         function: dispatch_function_t,
     );
 
-    // void dispatch_group_async ( dispatch_group_t group, dispatch_queue_t queue, dispatch_block_t block );
+    pub fn dispatch_group_async(
+        group: dispatch_group_t,
+        queue: dispatch_queue_t,
+        block: dispatch_block_t,
+    );
     pub fn dispatch_group_async_f(
         group: dispatch_group_t,
         queue: dispatch_queue_t,
@@ -126,7 +134,11 @@ extern "C" {
     pub fn dispatch_group_create() -> dispatch_group_t;
     pub fn dispatch_group_enter(group: dispatch_group_t);
     pub fn dispatch_group_leave(group: dispatch_group_t);
-    // void dispatch_group_notify ( dispatch_group_t group, dispatch_queue_t queue, dispatch_block_t block );
+    pub fn dispatch_group_notify(
+        group: dispatch_group_t,
+        queue: dispatch_queue_t,
+        block: dispatch_block_t,
+    );
     pub fn dispatch_group_notify_f(
         group: dispatch_group_t,
         queue: dispatch_queue_t,
@@ -148,13 +160,13 @@ extern "C" {
     pub fn dispatch_semaphore_wait(dsema: dispatch_semaphore_t, timeout: dispatch_time_t)
         -> c_long;
 
-    // void dispatch_barrier_async ( dispatch_queue_t queue, dispatch_block_t block );
+    pub fn dispatch_barrier_async(queue: dispatch_queue_t, block: dispatch_block_t);
     pub fn dispatch_barrier_async_f(
         queue: dispatch_queue_t,
         context: *mut c_void,
         work: dispatch_function_t,
     );
-    // void dispatch_barrier_sync ( dispatch_queue_t queue, dispatch_block_t block );
+    pub fn dispatch_barrier_sync(queue: dispatch_queue_t, block: dispatch_block_t);
     pub fn dispatch_barrier_sync_f(
         queue: dispatch_queue_t,
         context: *mut c_void,
@@ -295,26 +307,57 @@ pub fn dispatch_get_main_queue() -> dispatch_queue_t {
     unsafe { &_dispatch_main_q as *const _ as dispatch_queue_t }
 }
 
+/// A QOS class which indicates work performed by this thread is interactive with the user.
 pub const QOS_CLASS_USER_INTERACTIVE: dispatch_qos_class_t = 0x21;
+/// A QOS class which indicates work performed by this thread was initiated by the user
+/// and that the user is likely waiting for the results.
 pub const QOS_CLASS_USER_INITIATED: dispatch_qos_class_t = 0x19;
+/// A default QOS class used by the system in cases where more specific QOS class information is not available.
 pub const QOS_CLASS_DEFAULT: dispatch_qos_class_t = 0x15;
+/// A QOS class which indicates work performed by this thread may or may not be initiated by the user
+/// and that the user is unlikely to be immediately waiting for the results.
 pub const QOS_CLASS_UTILITY: dispatch_qos_class_t = 0x11;
+/// A QOS class which indicates work performed by this thread was not initiated by the user
+/// and that the user may be unaware of the results.
 pub const QOS_CLASS_BACKGROUND: dispatch_qos_class_t = 0x09;
+/// A QOS class value which indicates the absence or removal of QOS class information.
 pub const QOS_CLASS_UNSPECIFIED: dispatch_qos_class_t = 0x00;
 
+/// The queue executes blocks serially in FIFO order.
 pub const DISPATCH_QUEUE_SERIAL: dispatch_queue_attr_t = 0 as dispatch_queue_attr_t;
+/// The queue executes blocks concurrently.
 pub static DISPATCH_QUEUE_CONCURRENT: &'static dispatch_object_s =
     unsafe { &_dispatch_queue_attr_concurrent };
 
+/// Items dispatched to the queue will run at high priority,
+/// i.e. the queue will be scheduled for execution
+/// before any default priority or low priority queue.
 pub const DISPATCH_QUEUE_PRIORITY_HIGH: c_long = 2;
+/// Items dispatched to the queue will run at the default priority,
+/// i.e. the queue will be scheduled for execution
+/// after all high priority queues have been scheduled,
+/// but before any low priority queues have been scheduled.
 pub const DISPATCH_QUEUE_PRIORITY_DEFAULT: c_long = 0;
+/// Items dispatched to the queue will run at low priority,
+/// i.e. the queue will be scheduled for execution
+/// after all default priority and high priority queues have been scheduled.
 pub const DISPATCH_QUEUE_PRIORITY_LOW: c_long = -2;
+/// Items dispatched to the queue will run at background priority,
+/// i.e. the queue will be scheduled for execution
+/// after all higher priority queues have been scheduled
+/// and the system will run items on this queue on a thread
+/// with background status as per setpriority(2)
+/// (i.e. disk I/O is throttled and the thread's scheduling priority is set to lowest value).
 pub const DISPATCH_QUEUE_PRIORITY_BACKGROUND: c_long = -1 << 15;
 
+/// A `dispatch_time_t` corresponding to the current time.
 pub const DISPATCH_TIME_NOW: dispatch_time_t = 0;
+/// A `dispatch_time_t` corresponding to the maximum time.
 pub const DISPATCH_TIME_FOREVER: dispatch_time_t = !0;
 
+/// A dispatch I/O channel representing a stream of bytes.
 pub const DISPATCH_IO_STREAM: dispatch_io_type_t = 0;
+/// A dispatch I/O channel representing a random access file.
 pub const DISPATCH_IO_RANDOM: dispatch_io_type_t = 1;
 
 /// Stop outstanding operations on a channel when the channel is closed.
@@ -325,11 +368,26 @@ pub const DISPATCH_IO_STOP: dispatch_io_close_flags_t = 0x1;
 /// is inferior to the low water mark (or zero).
 pub const DISPATCH_IO_STRICT_INTERVAL: dispatch_io_interval_flags_t = 0x1;
 
+/// Flag indicating that a dispatch block object should act as a barrier block
+/// when submitted to a DISPATCH_QUEUE_CONCURRENT queue.
 pub const DISPATCH_BLOCK_BARRIER: dispatch_block_flags_t = 0x1;
+/// Flag indicating that a dispatch block object should execute disassociated
+/// from current execution context attributes such as QOS class, os_activity_t
+/// and properties of the current IPC request (if any).
 pub const DISPATCH_BLOCK_DETACHED: dispatch_block_flags_t = 0x2;
+/// Flag indicating that a dispatch block object should be assigned the execution
+/// context attributes that are current at the time the block object is created.
 pub const DISPATCH_BLOCK_ASSIGN_CURRENT: dispatch_block_flags_t = 0x4;
+/// Flag indicating that a dispatch block object should be not be assigned a QOS class.
 pub const DISPATCH_BLOCK_NO_QOS_CLASS: dispatch_block_flags_t = 0x8;
+/// Flag indicating that execution of a dispatch block object submitted to
+/// a queue should prefer the QOS class assigned to the queue over the QOS class
+/// assigned to the block (resp. associated with the block at the time of submission).
 pub const DISPATCH_BLOCK_INHERIT_QOS_CLASS: dispatch_block_flags_t = 0x10;
+/// Flag indicating that execution of a dispatch block object submitted to
+/// a queue should prefer the QOS class assigned to the block (resp. associated
+/// with the block at the time of submission) over the QOS class assigned to
+/// the queue, as long as doing so will not result in a lower QOS class.
 pub const DISPATCH_BLOCK_ENFORCE_QOS_CLASS: dispatch_block_flags_t = 0x20;
 
 #[cfg(test)]
