@@ -44,6 +44,18 @@ assert!(nums[0] == "2");
 
 #![warn(missing_docs)]
 
+extern crate block;
+extern crate libc;
+#[macro_use]
+extern crate log;
+#[macro_use]
+extern crate bitflags;
+
+#[cfg(test)]
+extern crate pretty_env_logger;
+#[cfg(test)]
+extern crate tempfile;
+
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::mem;
@@ -57,13 +69,59 @@ use ffi::*;
 /// Raw foreign function interface for libdispatch.
 pub mod ffi;
 
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+mod blk;
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+mod data;
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+mod io;
+mod qos;
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+mod sem;
+mod time;
+
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+pub use blk::{perform, BlockFlags, DispatchBlock};
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+pub use data::{Data, Destructor, IntoDestructor};
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+pub use io::{Channel, ChannelType, CloseFlags, IntervalFlags};
+pub use qos::QosClass;
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+pub use sem::Semaphore;
+pub use time::{after, at, IntoTimeout, WaitTimeout, FOREVER, NOW};
+
 /// The type of a dispatch queue.
-#[derive(Clone, Debug, Hash, PartialEq)]
+#[derive(Debug, Hash, PartialEq)]
 pub enum QueueAttribute {
     /// The queue executes blocks serially in FIFO order.
     Serial,
     /// The queue executes blocks concurrently.
     Concurrent,
+    /// Attribute for dispatch queues.
+    Value(dispatch_queue_attr_t),
+}
+
+impl Clone for QueueAttribute {
+    fn clone(&self) -> Self {
+        match *self {
+            QueueAttribute::Serial => QueueAttribute::Serial,
+            QueueAttribute::Concurrent => QueueAttribute::Concurrent,
+            QueueAttribute::Value(attr) => {
+                unsafe { dispatch_retain(attr as *mut _) };
+
+                QueueAttribute::Value(attr)
+            }
+        }
+    }
+}
+
+impl Drop for QueueAttribute {
+    fn drop(&mut self) {
+        if let &mut QueueAttribute::Value(attr) = self {
+            unsafe { dispatch_release(attr as *mut _) }
+        }
+    }
 }
 
 impl QueueAttribute {
@@ -72,6 +130,7 @@ impl QueueAttribute {
         match *self {
             QueueAttribute::Serial => DISPATCH_QUEUE_SERIAL,
             QueueAttribute::Concurrent => DISPATCH_QUEUE_CONCURRENT,
+            QueueAttribute::Value(attr) => attr,
         }
     }
 
@@ -81,6 +140,30 @@ impl QueueAttribute {
         // apparently really old from before OSX 10.7.
         // Back then, the attr for dispatch_queue_create must be NULL.
         ptr::null()
+    }
+
+    /// Returns an attribute value which may be provided to `Queue::create` or `Queue::with_target_queue`,
+    /// in order to make the created queue initially inactive.
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    pub fn inactive(self) -> Self {
+        let attr = unsafe { dispatch_queue_attr_make_initially_inactive(self.as_raw()) };
+
+        QueueAttribute::Value(attr)
+    }
+
+    /// Returns an attribute value which may be provided to `Queue::create` or `Queue::with_target_queue`,
+    /// in order to assign a QOS class and relative priority to the queue.
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    pub fn with_qos_class(self, qos_class: QosClass, relative_priority: i32) -> Self {
+        let attr = unsafe {
+            dispatch_queue_attr_make_with_qos_class(
+                self.as_raw(),
+                qos_class as dispatch_qos_class_t,
+                relative_priority,
+            )
+        };
+
+        QueueAttribute::Value(attr)
     }
 }
 
@@ -106,9 +189,9 @@ pub enum QueuePriority {
 impl QueuePriority {
     fn as_raw(&self) -> c_long {
         match *self {
-            QueuePriority::High       => DISPATCH_QUEUE_PRIORITY_HIGH,
-            QueuePriority::Default    => DISPATCH_QUEUE_PRIORITY_DEFAULT,
-            QueuePriority::Low        => DISPATCH_QUEUE_PRIORITY_LOW,
+            QueuePriority::High => DISPATCH_QUEUE_PRIORITY_HIGH,
+            QueuePriority::Default => DISPATCH_QUEUE_PRIORITY_DEFAULT,
+            QueuePriority::Low => DISPATCH_QUEUE_PRIORITY_LOW,
             QueuePriority::Background => DISPATCH_QUEUE_PRIORITY_BACKGROUND,
         }
     }
@@ -122,58 +205,54 @@ pub struct Queue {
     ptr: dispatch_queue_t,
 }
 
-fn time_after_delay(delay: Duration) -> dispatch_time_t {
-    delay.as_secs().checked_mul(1_000_000_000).and_then(|i| {
-        i.checked_add(delay.subsec_nanos() as u64)
-    }).and_then(|i| {
-        if i < (i64::max_value() as u64) { Some(i as i64) } else { None }
-    }).map_or(DISPATCH_TIME_FOREVER, |i| unsafe {
-        dispatch_time(DISPATCH_TIME_NOW, i)
-    })
-}
-
 fn context_and_function<F>(closure: F) -> (*mut c_void, dispatch_function_t)
-        where F: FnOnce() {
-    extern fn work_execute_closure<F>(context: Box<F>) where F: FnOnce() {
+where
+    F: FnOnce(),
+{
+    extern "C" fn work_execute_closure<F>(context: Box<F>)
+    where
+        F: FnOnce(),
+    {
         (*context)();
     }
 
     let closure = Box::new(closure);
-    let func: extern fn(Box<F>) = work_execute_closure::<F>;
-    unsafe {
-        (mem::transmute(closure), mem::transmute(func))
-    }
+    let func: extern "C" fn(Box<F>) = work_execute_closure::<F>;
+    unsafe { (mem::transmute(closure), mem::transmute(func)) }
 }
 
-fn context_and_sync_function<F>(closure: &mut Option<F>) ->
-        (*mut c_void, dispatch_function_t)
-        where F: FnOnce() {
-    extern fn work_read_closure<F>(context: &mut Option<F>) where F: FnOnce() {
+fn context_and_sync_function<F>(closure: &mut Option<F>) -> (*mut c_void, dispatch_function_t)
+where
+    F: FnOnce(),
+{
+    extern "C" fn work_read_closure<F>(context: &mut Option<F>)
+    where
+        F: FnOnce(),
+    {
         // This is always passed Some, so it's safe to unwrap
         let closure = context.take().unwrap();
         closure();
     }
 
     let context: *mut Option<F> = closure;
-    let func: extern fn(&mut Option<F>) = work_read_closure::<F>;
-    unsafe {
-        (context as *mut c_void, mem::transmute(func))
-    }
+    let func: extern "C" fn(&mut Option<F>) = work_read_closure::<F>;
+    unsafe { (context as *mut c_void, mem::transmute(func)) }
 }
 
-fn context_and_apply_function<F>(closure: &F) ->
-        (*mut c_void, extern fn(*mut c_void, usize))
-        where F: Fn(usize) {
-    extern fn work_apply_closure<F>(context: &F, iter: usize)
-            where F: Fn(usize) {
+fn context_and_apply_function<F>(closure: &F) -> (*mut c_void, extern "C" fn(*mut c_void, usize))
+where
+    F: Fn(usize),
+{
+    extern "C" fn work_apply_closure<F>(context: &F, iter: usize)
+    where
+        F: Fn(usize),
+    {
         context(iter);
     }
 
     let context: *const F = closure;
-    let func: extern fn(&F, usize) = work_apply_closure::<F>;
-    unsafe {
-        (context as *mut c_void, mem::transmute(func))
-    }
+    let func: extern "C" fn(&F, usize) = work_apply_closure::<F>;
+    unsafe { (context as *mut c_void, mem::transmute(func)) }
 }
 
 impl Queue {
@@ -200,10 +279,13 @@ impl Queue {
     /// Creates a new dispatch `Queue`.
     pub fn create(label: &str, attr: QueueAttribute) -> Self {
         let label = CString::new(label).unwrap();
-        let queue = unsafe {
-            dispatch_queue_create(label.as_ptr(), attr.as_raw())
-        };
+        let queue = unsafe { dispatch_queue_create(label.as_ptr(), attr.as_raw()) };
         Queue { ptr: queue }
+    }
+
+    /// Extracts the raw dispatch queue object.
+    pub fn as_raw(&self) -> dispatch_queue_t {
+        self.ptr
     }
 
     /// Creates a new dispatch `Queue` with the given target queue.
@@ -211,8 +293,7 @@ impl Queue {
     /// A dispatch queue's priority is inherited from its target queue.
     /// Additionally, if both the queue and its target are serial queues,
     /// their blocks will not be invoked concurrently.
-    pub fn with_target_queue(label: &str, attr: QueueAttribute, target: &Queue)
-            -> Self {
+    pub fn with_target_queue(label: &str, attr: QueueAttribute, target: &Queue) -> Self {
         let queue = Queue::create(label, attr);
         unsafe {
             dispatch_set_target_queue(queue.ptr, target.ptr);
@@ -232,9 +313,23 @@ impl Queue {
         str::from_utf8(label.to_bytes()).unwrap()
     }
 
+    /// Returns the QOS class and relative priority of the given queue.
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    pub fn qos_class(&self) -> (QosClass, i32) {
+        let mut relative_priority = 0;
+
+        let qos_class =
+            unsafe { dispatch_queue_get_qos_class(self.ptr, &mut relative_priority) }.into();
+
+        (qos_class, relative_priority)
+    }
+
     /// Submits a closure for execution on self and waits until it completes.
     pub fn sync<T, F>(&self, work: F) -> T
-            where F: Send + FnOnce() -> T, T: Send {
+    where
+        F: Send + FnOnce() -> T,
+        T: Send,
+    {
         let mut result = None;
         {
             let result_ref = &mut result;
@@ -254,7 +349,10 @@ impl Queue {
 
     /// Submits a closure for asynchronous execution on self and returns
     /// immediately.
-    pub fn async<F>(&self, work: F) where F: 'static + Send + FnOnce() {
+    pub fn async<F>(&self, work: F)
+    where
+        F: 'static + Send + FnOnce(),
+    {
         let (context, work) = context_and_function(work);
         unsafe {
             dispatch_async_f(self.ptr, context, work);
@@ -264,15 +362,20 @@ impl Queue {
     /// After the specified delay, submits a closure for asynchronous execution
     /// on self.
     pub fn after_ms<F>(&self, ms: u32, work: F)
-            where F: 'static + Send + FnOnce() {
+    where
+        F: 'static + Send + FnOnce(),
+    {
         self.after(Duration::from_millis(ms as u64), work);
     }
 
     /// After the specified delay, submits a closure for asynchronous execution
     /// on self.
-    pub fn after<F>(&self, delay: Duration, work: F)
-            where F: 'static + Send + FnOnce() {
-        let when = time_after_delay(delay);
+    pub fn after<F, T>(&self, delay: T, work: F)
+    where
+        F: 'static + Send + FnOnce(),
+        T: IntoTimeout,
+    {
+        let when = delay.into_raw();
         let (context, work) = context_and_function(work);
         unsafe {
             dispatch_after_f(when, self.ptr, context, work);
@@ -282,7 +385,9 @@ impl Queue {
     /// Submits a closure to be executed on self the given number of iterations
     /// and waits until it completes.
     pub fn apply<F>(&self, iterations: usize, work: F)
-            where F: Sync + Fn(usize) {
+    where
+        F: Sync + Fn(usize),
+    {
         let (context, work) = context_and_apply_function(&work);
         unsafe {
             dispatch_apply_f(iterations, self.ptr, context, work);
@@ -292,7 +397,10 @@ impl Queue {
     /// Submits a closure to be executed on self for each element of the
     /// provided slice and waits until it completes.
     pub fn foreach<T, F>(&self, slice: &mut [T], work: F)
-            where F: Sync + Fn(&mut T), T: Send {
+    where
+        F: Sync + Fn(&mut T),
+        T: Send,
+    {
         let slice_ptr = slice.as_mut_ptr();
         let work = move |i| unsafe {
             work(&mut *slice_ptr.offset(i as isize));
@@ -306,7 +414,11 @@ impl Queue {
     /// Submits a closure to be executed on self for each element of the
     /// provided vector and returns a `Vec` of the mapped elements.
     pub fn map<T, U, F>(&self, vec: Vec<T>, work: F) -> Vec<U>
-            where F: Sync + Fn(T) -> U, T: Send, U: Send {
+    where
+        F: Sync + Fn(T) -> U,
+        T: Send,
+        U: Send,
+    {
         let mut src = vec;
         let len = src.len();
         let src_ptr = src.as_ptr();
@@ -341,7 +453,10 @@ impl Queue {
     /// If self is a serial queue or one of the global concurrent queues,
     /// this method behaves like the normal `sync` method.
     pub fn barrier_sync<T, F>(&self, work: F) -> T
-            where F: Send + FnOnce() -> T, T: Send {
+    where
+        F: Send + FnOnce() -> T,
+        T: Send,
+    {
         let mut result = None;
         {
             let result_ref = &mut result;
@@ -372,7 +487,9 @@ impl Queue {
     /// If self is a serial queue or one of the global concurrent queues,
     /// this method behaves like the normal `async` method.
     pub fn barrier_async<F>(&self, work: F)
-            where F: 'static + Send + FnOnce() {
+    where
+        F: 'static + Send + FnOnce(),
+    {
         let (context, work) = context_and_function(work);
         unsafe {
             dispatch_barrier_async_f(self.ptr, context, work);
@@ -390,8 +507,8 @@ impl Queue {
     }
 }
 
-unsafe impl Sync for Queue { }
-unsafe impl Send for Queue { }
+unsafe impl Sync for Queue {}
+unsafe impl Send for Queue {}
 
 impl Clone for Queue {
     fn clone(&self) -> Self {
@@ -420,11 +537,13 @@ impl SuspendGuard {
         unsafe {
             dispatch_suspend(queue.ptr);
         }
-        SuspendGuard { queue: queue.clone() }
+        SuspendGuard {
+            queue: queue.clone(),
+        }
     }
 
     /// Drops self, allowing the suspended `Queue` to resume.
-    pub fn resume(self) { }
+    pub fn resume(self) {}
 }
 
 impl Clone for SuspendGuard {
@@ -454,7 +573,9 @@ impl Group {
     /// Creates a new dispatch `Group`.
     pub fn create() -> Group {
         unsafe {
-            Group { ptr: dispatch_group_create() }
+            Group {
+                ptr: dispatch_group_create(),
+            }
         }
     }
 
@@ -468,7 +589,9 @@ impl Group {
     /// Submits a closure asynchronously to the given `Queue` and associates it
     /// with self.
     pub fn async<F>(&self, queue: &Queue, work: F)
-            where F: 'static + Send + FnOnce() {
+    where
+        F: 'static + Send + FnOnce(),
+    {
         let (context, work) = context_and_function(work);
         unsafe {
             dispatch_group_async_f(self.ptr, queue.ptr, context, work);
@@ -479,7 +602,9 @@ impl Group {
     /// associated with self have completed.
     /// If self is empty, the closure is submitted immediately.
     pub fn notify<F>(&self, queue: &Queue, work: F)
-            where F: 'static + Send + FnOnce() {
+    where
+        F: 'static + Send + FnOnce(),
+    {
         let (context, work) = context_and_function(work);
         unsafe {
             dispatch_group_notify_f(self.ptr, queue.ptr, context, work);
@@ -488,9 +613,7 @@ impl Group {
 
     /// Waits synchronously for all tasks associated with self to complete.
     pub fn wait(&self) {
-        let result = unsafe {
-            dispatch_group_wait(self.ptr, DISPATCH_TIME_FOREVER)
-        };
+        let result = unsafe { dispatch_group_wait(self.ptr, DISPATCH_TIME_FOREVER) };
         assert!(result == 0, "Dispatch group wait errored");
     }
 
@@ -504,25 +627,21 @@ impl Group {
     /// Waits for all tasks associated with self to complete within the
     /// specified duration.
     /// Returns true if the tasks completed or false if the timeout elapsed.
-    pub fn wait_timeout(&self, timeout: Duration) -> bool {
-        let when = time_after_delay(timeout);
-        let result = unsafe {
-            dispatch_group_wait(self.ptr, when)
-        };
+    pub fn wait_timeout<T: IntoTimeout>(&self, timeout: T) -> bool {
+        let when = timeout.into_raw();
+        let result = unsafe { dispatch_group_wait(self.ptr, when) };
         result == 0
     }
 
     /// Returns whether self is currently empty.
     pub fn is_empty(&self) -> bool {
-        let result = unsafe {
-            dispatch_group_wait(self.ptr, DISPATCH_TIME_NOW)
-        };
+        let result = unsafe { dispatch_group_wait(self.ptr, DISPATCH_TIME_NOW) };
         result == 0
     }
 }
 
-unsafe impl Sync for Group { }
-unsafe impl Send for Group { }
+unsafe impl Sync for Group {}
+unsafe impl Send for Group {}
 
 impl Clone for Group {
     fn clone(&self) -> Self {
@@ -551,11 +670,13 @@ impl GroupGuard {
         unsafe {
             dispatch_group_enter(group.ptr);
         }
-        GroupGuard { group: group.clone() }
+        GroupGuard {
+            group: group.clone(),
+        }
     }
 
     /// Drops self, leaving the `Group`.
-    pub fn leave(self) { }
+    pub fn leave(self) {}
 }
 
 impl Clone for GroupGuard {
@@ -581,15 +702,22 @@ struct Once {
 impl Once {
     // TODO: make this a const fn when the feature is stable
     pub fn new() -> Once {
-        Once { predicate: UnsafeCell::new(0) }
+        Once {
+            predicate: UnsafeCell::new(0),
+        }
     }
 
     #[inline(always)]
-    pub fn call_once<F>(&'static self, work: F) where F: FnOnce() {
+    pub fn call_once<F>(&'static self, work: F)
+    where
+        F: FnOnce(),
+    {
         #[cold]
         #[inline(never)]
         fn once<F>(predicate: *mut dispatch_once_t, work: F)
-                where F: FnOnce() {
+        where
+            F: FnOnce(),
+        {
             let mut work = Some(work);
             let (context, work) = context_and_sync_function(&mut work);
             unsafe {
@@ -606,13 +734,13 @@ impl Once {
     }
 }
 
-unsafe impl Sync for Once { }
+unsafe impl Sync for Once {}
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use std::sync::{Arc, Mutex};
     use std::time::{Duration, Instant};
-    use super::*;
 
     fn async_increment(queue: &Queue, num: &Arc<Mutex<i32>>) {
         let num = num.clone();
@@ -630,6 +758,22 @@ mod tests {
         q.sync(|| num = 1);
         assert_eq!(num, 1);
 
+        assert_eq!(q.sync(|| num), 1);
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    #[test]
+    fn test_serial_queue_with_qos_class() {
+        let q = Queue::create(
+            "",
+            QueueAttribute::Serial.with_qos_class(QosClass::UserInteractive, 0),
+        );
+        let mut num = 0;
+
+        q.sync(|| num = 1);
+        assert_eq!(num, 1);
+
+        assert_eq!(q.qos_class(), (QosClass::UserInteractive, 0));
         assert_eq!(q.sync(|| num), 1);
     }
 
