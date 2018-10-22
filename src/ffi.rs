@@ -3,7 +3,8 @@
 
 use std::os::raw::{c_char, c_long, c_ulong, c_void};
 
-pub enum dispatch_object_s { }
+#[repr(C)]
+pub struct dispatch_object_s { _private: [u8; 0] }
 
 // dispatch_block_t
 pub type dispatch_function_t = extern fn(*mut c_void);
