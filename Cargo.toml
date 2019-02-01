@@ -17,3 +17,7 @@ exclude = [
   "travis_test.sh",
   "tests-ios/**",
 ]
+
+[dependencies]
+bitflags = "0.7"
+libc = "0.2"
