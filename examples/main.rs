@@ -10,10 +10,10 @@ use dispatch::{Queue, QueuePriority};
 /// All printing is performed on the main queue.
 /// Repeats until the user stops entering numbers.
 fn prompt(mut sum: i32, queue: Queue) {
-    queue.clone().async_exec(move || {
+    queue.clone().exec_async(move || {
         let main = Queue::main();
         // Print our prompt on the main thread and wait until it's complete
-        main.sync_exec(|| {
+        main.exec_sync(|| {
             println!("Enter a number:");
         });
 
@@ -24,14 +24,14 @@ fn prompt(mut sum: i32, queue: Queue) {
         if let Ok(num) = input.trim().parse::<i32>() {
             sum += num;
             // Print the sum on the main thread and wait until it's complete
-            main.sync_exec(|| {
+            main.exec_sync(|| {
                 println!("Sum is {}\n", sum);
             });
             // Do it again!
             prompt(sum, queue);
         } else {
             // Bail if no number was entered
-            main.async_exec(|| {
+            main.exec_async(|| {
                 println!("Not a number, exiting.");
                 exit(0);
             });

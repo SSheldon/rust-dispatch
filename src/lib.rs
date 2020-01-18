@@ -16,8 +16,8 @@ queue is serial and can be accessed through the `Queue::main` function.
 use dispatch::{Queue, QueueAttribute};
 
 let queue = Queue::create("com.example.rust", QueueAttribute::Serial);
-queue.async_exec(|| println!("Hello"));
-queue.async_exec(|| println!("World"));
+queue.exec_async(|| println!("Hello"));
+queue.exec_async(|| println!("World"));
 ```
 
 # Concurrent Queues
@@ -233,7 +233,7 @@ impl Queue {
     }
 
     /// Submits a closure for execution on self and waits until it completes.
-    pub fn sync_exec<T, F>(&self, work: F) -> T
+    pub fn exec_sync<T, F>(&self, work: F) -> T
             where F: Send + FnOnce() -> T, T: Send {
         let mut result = None;
         {
@@ -254,7 +254,7 @@ impl Queue {
 
     /// Submits a closure for asynchronous execution on self and returns
     /// immediately.
-    pub fn async_exec<F>(&self, work: F) where F: 'static + Send + FnOnce() {
+    pub fn exec_async<F>(&self, work: F) where F: 'static + Send + FnOnce() {
         let (context, work) = context_and_function(work);
         unsafe {
             dispatch_async_f(self.ptr, context, work);
@@ -263,14 +263,14 @@ impl Queue {
 
     /// After the specified delay, submits a closure for asynchronous execution
     /// on self.
-    pub fn after_ms<F>(&self, ms: u32, work: F)
+    pub fn exec_after_ms<F>(&self, ms: u32, work: F)
             where F: 'static + Send + FnOnce() {
-        self.after(Duration::from_millis(ms as u64), work);
+        self.exec_after(Duration::from_millis(ms as u64), work);
     }
 
     /// After the specified delay, submits a closure for asynchronous execution
     /// on self.
-    pub fn after<F>(&self, delay: Duration, work: F)
+    pub fn exec_after<F>(&self, delay: Duration, work: F)
             where F: 'static + Send + FnOnce() {
         let when = time_after_delay(delay);
         let (context, work) = context_and_function(work);
@@ -467,7 +467,7 @@ impl Group {
 
     /// Submits a closure asynchronously to the given `Queue` and associates it
     /// with self.
-    pub fn async_exec<F>(&self, queue: &Queue, work: F)
+    pub fn exec_async<F>(&self, queue: &Queue, work: F)
             where F: 'static + Send + FnOnce() {
         let (context, work) = context_and_function(work);
         unsafe {
@@ -616,7 +616,7 @@ mod tests {
 
     fn async_increment(queue: &Queue, num: &Arc<Mutex<i32>>) {
         let num = num.clone();
-        queue.async_exec(move || {
+        queue.exec_async(move || {
             let mut num = num.lock().unwrap();
             *num += 1;
         });
@@ -627,10 +627,10 @@ mod tests {
         let q = Queue::create("", QueueAttribute::Serial);
         let mut num = 0;
 
-        q.sync_exec(|| num = 1);
+        q.exec_sync(|| num = 1);
         assert_eq!(num, 1);
 
-        assert_eq!(q.sync_exec(|| num), 1);
+        assert_eq!(q.exec_sync(|| num), 1);
     }
 
     #[test]
@@ -638,7 +638,7 @@ mod tests {
         let q = Queue::create("", QueueAttribute::Serial);
 
         let s = "Hello, world!".to_string();
-        let len = q.sync_exec(move || s.len());
+        let len = q.exec_sync(move || s.len());
         assert_eq!(len, 13);
     }
 
@@ -650,7 +650,7 @@ mod tests {
         async_increment(&q, &num);
 
         // Sync an empty block to ensure the async one finishes
-        q.sync_exec(|| ());
+        q.exec_sync(|| ());
         assert_eq!(*num.lock().unwrap(), 1);
     }
 
@@ -664,7 +664,7 @@ mod tests {
         let num2 = num.clone();
         let guard = group.enter();
         let start = Instant::now();
-        q.after(delay, move || {
+        q.exec_after(delay, move || {
             let mut num = num2.lock().unwrap();
             *num = 1;
             guard.leave();
@@ -772,7 +772,7 @@ mod tests {
 
         // But ensure the work does complete after we resume
         guard.resume();
-        q.sync_exec(|| ());
+        q.exec_sync(|| ());
         assert_eq!(*num.lock().unwrap(), 1);
     }
 
@@ -783,7 +783,7 @@ mod tests {
         let num = Arc::new(Mutex::new(0));
 
         let num2 = num.clone();
-        group.async_exec(&q, move || {
+        group.exec_async(&q, move || {
             let mut num = num2.lock().unwrap();
             *num += 1;
         });
@@ -791,7 +791,7 @@ mod tests {
         let guard = group.enter();
         assert!(!group.is_empty());
         let num3 = num.clone();
-        q.async_exec(move || {
+        q.exec_async(move || {
             let mut num = num3.lock().unwrap();
             *num += 1;
             guard.leave();
