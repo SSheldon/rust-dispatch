@@ -52,7 +52,7 @@ use std::ptr;
 use std::str;
 use std::time::Duration;
 
-use ffi::*;
+use crate::ffi::*;
 
 /// Raw foreign function interface for libdispatch.
 pub mod ffi;

@@ -2,6 +2,7 @@
 name = "dispatch"
 version = "0.2.0"
 authors = ["Steven Sheldon"]
+edition = "2018"
 
 description = "Rust wrapper for Apple's Grand Central Dispatch."
 keywords = ["gcd", "objective-c", "osx", "ios"]
