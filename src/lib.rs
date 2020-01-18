@@ -55,12 +55,14 @@ use crate::ffi::*;
 pub use crate::group::{Group, GroupGuard};
 pub use crate::once::Once;
 pub use crate::queue::{Queue, QueueAttribute, QueuePriority, SuspendGuard};
+pub use crate::sem::Semaphore;
 
 /// Raw foreign function interface for libdispatch.
 pub mod ffi;
 mod group;
 mod queue;
 mod once;
+mod sem;
 
 /// An error indicating a wait timed out.
 #[derive(Clone, Debug)]

@@ -1,58 +1,57 @@
-use ffi::*;
-use {Timeout, WaitTimeout};
+use std::os::raw::c_long;
+use std::time::Duration;
+
+use crate::ffi::*;
+use crate::{time_after_delay, WaitTimeout};
 
 /// A counting semaphore.
-///
-/// Calls to `Semaphore::signal` must be balanced with calls to `Semaphore::wait`.
-/// Attempting to dispose of a semaphore with a count lower than value causes an EXC_BAD_INSTRUCTION exception.
-#[derive(Debug)]
 pub struct Semaphore {
     ptr: dispatch_semaphore_t,
 }
 
 impl Semaphore {
-    /// Creates new counting semaphore with an initial value.
+    /// Creates a new `Semaphore` with an initial value.
     ///
-    /// Passing zero for the value is useful for
-    /// when two threads need to reconcile the completion of a particular event.
-    /// Passing a value greater than zero is useful for managing a finite pool of resources,
-    /// where the pool size is equal to the value.
-    pub fn new(n: u64) -> Self {
-        let ptr = unsafe { dispatch_semaphore_create(n as i64) };
-
+    /// A `Semaphore` created with a value greater than 0 cannot be disposed if
+    /// it has been decremented below its original value. If there are more
+    /// successful calls to `wait` than `signal`, the system assumes the
+    /// `Semaphore` is still in use and will abort if it is disposed.
+    pub fn new(value: u32) -> Self {
+        let ptr = unsafe {
+            dispatch_semaphore_create(value as c_long)
+        };
         Semaphore { ptr }
     }
 
-    /// Wait (decrement) for a semaphore.
-    ///
-    /// Decrement the counting semaphore.
-    pub fn wait(&self) -> Result<(), WaitTimeout> {
-        self.wait_timeout(DISPATCH_TIME_FOREVER)
+    /// Wait for (decrement) self.
+    pub fn wait(&self) {
+        let result = unsafe {
+            dispatch_semaphore_wait(self.ptr, DISPATCH_TIME_FOREVER)
+        };
+        assert!(result == 0, "Dispatch semaphore wait errored");
     }
 
-    /// Wait (decrement) for a semaphoreor until the specified timeout has elapsed.
-    ///
-    /// Decrement the counting semaphore.
-    pub fn wait_timeout<T: Timeout>(&self, timeout: T) -> Result<(), WaitTimeout> {
-        let when = timeout.as_raw();
-
-        let n = unsafe { dispatch_semaphore_wait(self.ptr, when) };
-
-        if n == 0 {
+    /// Wait for (decrement) self until the specified timeout has elapsed.
+    pub fn wait_timeout(&self, timeout: Duration) -> Result<(), WaitTimeout> {
+        let when = time_after_delay(timeout);
+        let result = unsafe {
+            dispatch_semaphore_wait(self.ptr, when)
+        };
+        if result == 0 {
             Ok(())
         } else {
-            Err(WaitTimeout)
+            Err(WaitTimeout { duration: timeout })
         }
     }
 
-    /// Signal (increment) a semaphore.
+    /// Signal (increment) self.
     ///
-    /// Increment the counting semaphore.
-    /// If the previous value was less than zero, this function wakes a waiting thread before returning.
-    ///
-    /// This function returns `true` if a thread is woken. Otherwise, `false` is returned.
+    /// If the previous value was less than zero, this method wakes a waiting thread.
+    /// Returns `true` if a thread is woken or `false` otherwise.
     pub fn signal(&self) -> bool {
-        unsafe { dispatch_semaphore_signal(self.ptr) != 0 }
+        unsafe {
+            dispatch_semaphore_signal(self.ptr) != 0
+        }
     }
 }
 
@@ -82,16 +81,11 @@ mod tests {
 
     #[test]
     fn test_semaphore() {
-        let sem = Semaphore::new(1);
-
-        assert!(sem.wait().is_ok());
-        assert_eq!(sem.wait_timeout(0).unwrap_err(), WaitTimeout);
+        let sem = Semaphore::new(0);
 
         assert!(!sem.signal());
-        assert!(sem.wait_timeout(DISPATCH_TIME_FOREVER).is_ok());
+        sem.wait();
 
-        // Calls to dispatch_semaphore_signal must be balanced with calls to wait().
-        // Attempting to dispose of a semaphore with a count lower than value causes an EXC_BAD_INSTRUCTION exception.
-        assert!(!sem.signal());
+        assert!(sem.wait_timeout(Duration::from_millis(5)).is_err());
     }
 }
