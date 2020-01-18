@@ -34,7 +34,7 @@ use dispatch::{Queue, QueuePriority};
 let queue = Queue::global(QueuePriority::Default);
 
 let mut nums = vec![1, 2];
-queue.foreach(&mut nums, |x| *x += 1);
+queue.for_each(&mut nums, |x| *x += 1);
 assert!(nums == [2, 3]);
 
 let nums = queue.map(nums, |x| x.to_string());
@@ -284,7 +284,7 @@ impl Queue {
 
     /// Submits a closure to be executed on self for each element of the
     /// provided slice and waits until it completes.
-    pub fn foreach<T, F>(&self, slice: &mut [T], work: F)
+    pub fn for_each<T, F>(&self, slice: &mut [T], work: F)
             where F: Sync + Fn(&mut T), T: Send {
         let slice_ptr = slice.as_mut_ptr();
         let work = move |i| unsafe {
@@ -683,11 +683,11 @@ mod tests {
     }
 
     #[test]
-    fn test_foreach() {
+    fn test_for_each() {
         let q = Queue::create("", QueueAttribute::Serial);
         let mut nums = [0, 1];
 
-        q.foreach(&mut nums, |x| *x += 1);
+        q.for_each(&mut nums, |x| *x += 1);
         assert_eq!(nums, [1, 2]);
     }
 
