@@ -16,8 +16,8 @@ queue is serial and can be accessed through the `Queue::main` function.
 use dispatch::{Queue, QueueAttribute};
 
 let queue = Queue::create("com.example.rust", QueueAttribute::Serial);
-queue.async(|| println!("Hello"));
-queue.async(|| println!("World"));
+queue.async_exec(|| println!("Hello"));
+queue.async_exec(|| println!("World"));
 ```
 
 # Concurrent Queues
@@ -233,7 +233,7 @@ impl Queue {
     }
 
     /// Submits a closure for execution on self and waits until it completes.
-    pub fn sync<T, F>(&self, work: F) -> T
+    pub fn sync_exec<T, F>(&self, work: F) -> T
             where F: Send + FnOnce() -> T, T: Send {
         let mut result = None;
         {
@@ -254,7 +254,7 @@ impl Queue {
 
     /// Submits a closure for asynchronous execution on self and returns
     /// immediately.
-    pub fn async<F>(&self, work: F) where F: 'static + Send + FnOnce() {
+    pub fn async_exec<F>(&self, work: F) where F: 'static + Send + FnOnce() {
         let (context, work) = context_and_function(work);
         unsafe {
             dispatch_async_f(self.ptr, context, work);
@@ -467,7 +467,7 @@ impl Group {
 
     /// Submits a closure asynchronously to the given `Queue` and associates it
     /// with self.
-    pub fn async<F>(&self, queue: &Queue, work: F)
+    pub fn async_exec<F>(&self, queue: &Queue, work: F)
             where F: 'static + Send + FnOnce() {
         let (context, work) = context_and_function(work);
         unsafe {
@@ -616,7 +616,7 @@ mod tests {
 
     fn async_increment(queue: &Queue, num: &Arc<Mutex<i32>>) {
         let num = num.clone();
-        queue.async(move || {
+        queue.async_exec(move || {
             let mut num = num.lock().unwrap();
             *num += 1;
         });
@@ -627,10 +627,10 @@ mod tests {
         let q = Queue::create("", QueueAttribute::Serial);
         let mut num = 0;
 
-        q.sync(|| num = 1);
+        q.sync_exec(|| num = 1);
         assert_eq!(num, 1);
 
-        assert_eq!(q.sync(|| num), 1);
+        assert_eq!(q.sync_exec(|| num), 1);
     }
 
     #[test]
@@ -638,7 +638,7 @@ mod tests {
         let q = Queue::create("", QueueAttribute::Serial);
 
         let s = "Hello, world!".to_string();
-        let len = q.sync(move || s.len());
+        let len = q.sync_exec(move || s.len());
         assert_eq!(len, 13);
     }
 
@@ -650,7 +650,7 @@ mod tests {
         async_increment(&q, &num);
 
         // Sync an empty block to ensure the async one finishes
-        q.sync(|| ());
+        q.sync_exec(|| ());
         assert_eq!(*num.lock().unwrap(), 1);
     }
 
@@ -772,7 +772,7 @@ mod tests {
 
         // But ensure the work does complete after we resume
         guard.resume();
-        q.sync(|| ());
+        q.sync_exec(|| ());
         assert_eq!(*num.lock().unwrap(), 1);
     }
 
@@ -783,7 +783,7 @@ mod tests {
         let num = Arc::new(Mutex::new(0));
 
         let num2 = num.clone();
-        group.async(&q, move || {
+        group.async_exec(&q, move || {
             let mut num = num2.lock().unwrap();
             *num += 1;
         });
@@ -791,7 +791,7 @@ mod tests {
         let guard = group.enter();
         assert!(!group.is_empty());
         let num3 = num.clone();
-        q.async(move || {
+        q.async_exec(move || {
             let mut num = num3.lock().unwrap();
             *num += 1;
             guard.leave();
