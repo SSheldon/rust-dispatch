@@ -263,13 +263,6 @@ impl Queue {
 
     /// After the specified delay, submits a closure for asynchronous execution
     /// on self.
-    pub fn exec_after_ms<F>(&self, ms: u32, work: F)
-            where F: 'static + Send + FnOnce() {
-        self.exec_after(Duration::from_millis(ms as u64), work);
-    }
-
-    /// After the specified delay, submits a closure for asynchronous execution
-    /// on self.
     pub fn exec_after<F>(&self, delay: Duration, work: F)
             where F: 'static + Send + FnOnce() {
         let when = time_after_delay(delay);
@@ -492,13 +485,6 @@ impl Group {
             dispatch_group_wait(self.ptr, DISPATCH_TIME_FOREVER)
         };
         assert!(result == 0, "Dispatch group wait errored");
-    }
-
-    /// Waits for all tasks associated with self to complete within the
-    /// specified duration.
-    /// Returns true if the tasks completed or false if the timeout elapsed.
-    pub fn wait_timeout_ms(&self, ms: u32) -> bool {
-        self.wait_timeout(Duration::from_millis(ms as u64))
     }
 
     /// Waits for all tasks associated with self to complete within the
