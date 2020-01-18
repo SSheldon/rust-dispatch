@@ -44,6 +44,8 @@ assert!(nums[0] == "2");
 
 #![warn(missing_docs)]
 
+use std::error::Error;
+use std::fmt;
 use std::mem;
 use std::os::raw::c_void;
 use std::time::Duration;
@@ -59,6 +61,20 @@ pub mod ffi;
 mod group;
 mod queue;
 mod once;
+
+/// An error indicating a wait timed out.
+#[derive(Clone, Debug)]
+pub struct WaitTimeout {
+    duration: Duration,
+}
+
+impl fmt::Display for WaitTimeout {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Wait timed out after duration {:?}", self.duration)
+    }
+}
+
+impl Error for WaitTimeout { }
 
 fn time_after_delay(delay: Duration) -> dispatch_time_t {
     delay.as_secs().checked_mul(1_000_000_000).and_then(|i| {

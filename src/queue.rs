@@ -397,7 +397,7 @@ mod tests {
         });
 
         // Wait for the previous block to complete
-        assert!(group.wait_timeout(Duration::from_millis(5000)));
+        group.wait_timeout(Duration::from_millis(5000)).unwrap();
         assert!(start.elapsed() >= delay);
         assert_eq!(*num.lock().unwrap(), 1);
     }

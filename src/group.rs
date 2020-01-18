@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use crate::ffi::*;
-use crate::{context_and_function, time_after_delay};
+use crate::{context_and_function, time_after_delay, WaitTimeout};
 use crate::queue::Queue;
 
 /// A Grand Central Dispatch group.
@@ -60,12 +60,16 @@ impl Group {
     /// Waits for all tasks associated with self to complete within the
     /// specified duration.
     /// Returns true if the tasks completed or false if the timeout elapsed.
-    pub fn wait_timeout(&self, timeout: Duration) -> bool {
+    pub fn wait_timeout(&self, timeout: Duration) -> Result<(), WaitTimeout> {
         let when = time_after_delay(timeout);
         let result = unsafe {
             dispatch_group_wait(self.ptr, when)
         };
-        result == 0
+        if result == 0 {
+            Ok(())
+        } else {
+            Err(WaitTimeout { duration: timeout })
+        }
     }
 
     /// Returns whether self is currently empty.
