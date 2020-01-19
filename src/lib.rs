@@ -55,7 +55,7 @@ use crate::ffi::*;
 pub use crate::group::{Group, GroupGuard};
 pub use crate::once::Once;
 pub use crate::queue::{Queue, QueueAttribute, QueuePriority, SuspendGuard};
-pub use crate::sem::Semaphore;
+pub use crate::sem::{Semaphore, SemaphoreGuard};
 
 /// Raw foreign function interface for libdispatch.
 pub mod ffi;

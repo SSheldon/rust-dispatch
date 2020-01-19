@@ -53,6 +53,21 @@ impl Semaphore {
             dispatch_semaphore_signal(self.ptr) != 0
         }
     }
+
+    /// Wait to access a resource protected by self.
+    /// This decrements self and returns a guard that increments when dropped.
+    pub fn access(&self) -> SemaphoreGuard {
+        self.wait();
+        SemaphoreGuard::new(self.clone())
+    }
+
+    /// Wait until the specified timeout to access a resource protected by self.
+    /// This decrements self and returns a guard that increments when dropped.
+    pub fn access_timeout(&self, timeout: Duration)
+    -> Result<SemaphoreGuard, WaitTimeout> {
+        self.wait_timeout(timeout)?;
+        Ok(SemaphoreGuard::new(self.clone()))
+    }
 }
 
 unsafe impl Sync for Semaphore {}
@@ -75,6 +90,26 @@ impl Drop for Semaphore {
     }
 }
 
+/// An RAII guard which will signal a `Semaphore` when dropped.
+pub struct SemaphoreGuard {
+    sem: Semaphore,
+}
+
+impl SemaphoreGuard {
+    fn new(sem: Semaphore) -> SemaphoreGuard {
+        SemaphoreGuard { sem }
+    }
+
+    /// Drops self, signaling the `Semaphore`.
+    pub fn signal(self) { }
+}
+
+impl Drop for SemaphoreGuard {
+    fn drop(&mut self) {
+        self.sem.signal();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -87,5 +122,15 @@ mod tests {
         sem.wait();
 
         assert!(sem.wait_timeout(Duration::from_millis(5)).is_err());
+    }
+
+    #[test]
+    fn test_semaphore_guard() {
+        let sem = Semaphore::new(1);
+
+        let guard = sem.access();
+        assert!(sem.access_timeout(Duration::from_millis(5)).is_err());
+        drop(guard);
+        assert!(sem.access_timeout(Duration::from_millis(5)).is_ok());
     }
 }
