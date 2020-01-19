@@ -5,6 +5,7 @@ use crate::ffi::*;
 use crate::{time_after_delay, WaitTimeout};
 
 /// A counting semaphore.
+#[derive(Debug)]
 pub struct Semaphore {
     ptr: dispatch_semaphore_t,
 }
@@ -91,6 +92,7 @@ impl Drop for Semaphore {
 }
 
 /// An RAII guard which will signal a `Semaphore` when dropped.
+#[derive(Debug)]
 pub struct SemaphoreGuard {
     sem: Semaphore,
 }

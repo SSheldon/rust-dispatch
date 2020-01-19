@@ -5,6 +5,7 @@ use crate::context_and_sync_function;
 
 /// A predicate used to execute a closure only once for the lifetime of an
 /// application.
+#[derive(Debug)]
 pub struct Once {
     predicate: UnsafeCell<dispatch_once_t>,
 }

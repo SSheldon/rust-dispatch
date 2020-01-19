@@ -9,6 +9,7 @@ use crate::queue::Queue;
 /// A `Group` is a mechanism for grouping closures and monitoring them. This
 /// allows for aggregate synchronization, so you can track when all the
 /// closures complete, even if they are running on different queues.
+#[derive(Debug)]
 pub struct Group {
     ptr: dispatch_group_t,
 }
@@ -102,6 +103,7 @@ impl Drop for Group {
 }
 
 /// An RAII guard which will leave a `Group` when dropped.
+#[derive(Debug)]
 pub struct GroupGuard {
     group: Group,
 }

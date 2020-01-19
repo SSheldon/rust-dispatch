@@ -71,6 +71,7 @@ impl QueuePriority {
 ///
 /// For more information, see Apple's [Grand Central Dispatch reference](
 /// https://developer.apple.com/library/mac/documentation/Performance/Reference/GCD_libdispatch_Ref/index.html).
+#[derive(Debug)]
 pub struct Queue {
     pub(crate) ptr: dispatch_queue_t,
 }
@@ -303,6 +304,7 @@ impl Drop for Queue {
 }
 
 /// An RAII guard which will resume a suspended `Queue` when dropped.
+#[derive(Debug)]
 pub struct SuspendGuard {
     queue: Queue,
 }
