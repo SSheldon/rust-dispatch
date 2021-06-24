@@ -6,6 +6,7 @@ use crate::{time_after_delay, WaitTimeout};
 
 /// A counting semaphore.
 #[derive(Debug)]
+#[repr(transparent)]
 pub struct Semaphore {
     ptr: dispatch_semaphore_t,
 }
@@ -68,6 +69,11 @@ impl Semaphore {
     -> Result<SemaphoreGuard, WaitTimeout> {
         self.wait_timeout(timeout)?;
         Ok(SemaphoreGuard::new(self.clone()))
+    }
+
+    /// Returns the raw underlying `dispatch_semaphore_t` value.
+    pub fn as_raw(&self) -> dispatch_semaphore_t {
+        self.ptr
     }
 }
 

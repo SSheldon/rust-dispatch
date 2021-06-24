@@ -10,6 +10,7 @@ use crate::queue::Queue;
 /// allows for aggregate synchronization, so you can track when all the
 /// closures complete, even if they are running on different queues.
 #[derive(Debug)]
+#[repr(transparent)]
 pub struct Group {
     ptr: dispatch_group_t,
 }
@@ -79,6 +80,11 @@ impl Group {
             dispatch_group_wait(self.ptr, DISPATCH_TIME_NOW)
         };
         result == 0
+    }
+
+    /// Returns the raw underlying `dispatch_group_t` value.
+    pub fn as_raw(&self) -> dispatch_group_t {
+        self.ptr
     }
 }
 
