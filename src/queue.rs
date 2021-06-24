@@ -72,6 +72,7 @@ impl QueuePriority {
 /// For more information, see Apple's [Grand Central Dispatch reference](
 /// https://developer.apple.com/library/mac/documentation/Performance/Reference/GCD_libdispatch_Ref/index.html).
 #[derive(Debug)]
+#[repr(transparent)]
 pub struct Queue {
     pub(crate) ptr: dispatch_queue_t,
 }
@@ -280,6 +281,11 @@ impl Queue {
     /// Invocation does not resume until all `SuspendGuard`s have been dropped.
     pub fn suspend(&self) -> SuspendGuard {
         SuspendGuard::new(self)
+    }
+
+    /// Returns the raw underlying `dispatch_queue_t` value.
+    pub fn as_raw(&self) -> dispatch_queue_t {
+        self.ptr
     }
 }
 
