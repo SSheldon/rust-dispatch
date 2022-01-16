@@ -281,6 +281,14 @@ impl Queue {
     pub fn suspend(&self) -> SuspendGuard {
         SuspendGuard::new(self)
     }
+
+    /// Returns the raw `dispatch_queue_t` pointer representing this dispatch queue.
+    ///
+    /// This function does not modify the reference count, so remember to `dispatch_retain`
+    /// this pointer as necessary.
+    pub fn raw_ptr(&self) -> dispatch_queue_t {
+        self.ptr
+    }
 }
 
 unsafe impl Sync for Queue { }
