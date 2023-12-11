@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use crate::ffi::*;
 use crate::{
-    context_and_function, context_and_sync_function, context_and_apply_function,
-    time_after_delay,
+    context_and_apply_function, context_and_function, time_after_delay,
+    with_context_and_sync_function,
 };
 
 /// The type of a dispatch queue.
@@ -59,9 +59,9 @@ pub enum QueuePriority {
 impl QueuePriority {
     fn as_raw(&self) -> c_long {
         match *self {
-            QueuePriority::High       => DISPATCH_QUEUE_PRIORITY_HIGH,
-            QueuePriority::Default    => DISPATCH_QUEUE_PRIORITY_DEFAULT,
-            QueuePriority::Low        => DISPATCH_QUEUE_PRIORITY_LOW,
+            QueuePriority::High => DISPATCH_QUEUE_PRIORITY_HIGH,
+            QueuePriority::Default => DISPATCH_QUEUE_PRIORITY_DEFAULT,
+            QueuePriority::Low => DISPATCH_QUEUE_PRIORITY_LOW,
             QueuePriority::Background => DISPATCH_QUEUE_PRIORITY_BACKGROUND,
         }
     }
@@ -100,9 +100,7 @@ impl Queue {
     /// Creates a new dispatch `Queue`.
     pub fn create(label: &str, attr: QueueAttribute) -> Self {
         let label = CString::new(label).unwrap();
-        let queue = unsafe {
-            dispatch_queue_create(label.as_ptr(), attr.as_raw())
-        };
+        let queue = unsafe { dispatch_queue_create(label.as_ptr(), attr.as_raw()) };
         Queue { ptr: queue }
     }
 
@@ -111,8 +109,7 @@ impl Queue {
     /// A dispatch queue's priority is inherited from its target queue.
     /// Additionally, if both the queue and its target are serial queues,
     /// their blocks will not be invoked concurrently.
-    pub fn with_target_queue(label: &str, attr: QueueAttribute, target: &Queue)
-            -> Self {
+    pub fn with_target_queue(label: &str, attr: QueueAttribute, target: &Queue) -> Self {
         let queue = Queue::create(label, attr);
         unsafe {
             dispatch_set_target_queue(queue.ptr, target.ptr);
@@ -134,27 +131,22 @@ impl Queue {
 
     /// Submits a closure for execution on self and waits until it completes.
     pub fn exec_sync<T, F>(&self, work: F) -> T
-            where F: Send + FnOnce() -> T, T: Send {
-        let mut result = None;
-        {
-            let result_ref = &mut result;
-            let work = move || {
-                *result_ref = Some(work());
-            };
-
-            let mut work = Some(work);
-            let (context, work) = context_and_sync_function(&mut work);
-            unsafe {
-                dispatch_sync_f(self.ptr, context, work);
-            }
-        }
-        // This was set so it's safe to unwrap
-        result.unwrap()
+    where
+        F: Send + FnOnce() -> T,
+        T: Send,
+    {
+        with_context_and_sync_function(work, |context, work| unsafe {
+            dispatch_sync_f(self.ptr, context, work);
+        })
+        .unwrap()
     }
 
     /// Submits a closure for asynchronous execution on self and returns
     /// immediately.
-    pub fn exec_async<F>(&self, work: F) where F: 'static + Send + FnOnce() {
+    pub fn exec_async<F>(&self, work: F)
+    where
+        F: 'static + Send + FnOnce(),
+    {
         let (context, work) = context_and_function(work);
         unsafe {
             dispatch_async_f(self.ptr, context, work);
@@ -164,7 +156,9 @@ impl Queue {
     /// After the specified delay, submits a closure for asynchronous execution
     /// on self.
     pub fn exec_after<F>(&self, delay: Duration, work: F)
-            where F: 'static + Send + FnOnce() {
+    where
+        F: 'static + Send + FnOnce(),
+    {
         let when = time_after_delay(delay);
         let (context, work) = context_and_function(work);
         unsafe {
@@ -175,7 +169,9 @@ impl Queue {
     /// Submits a closure to be executed on self the given number of iterations
     /// and waits until it completes.
     pub fn apply<F>(&self, iterations: usize, work: F)
-            where F: Sync + Fn(usize) {
+    where
+        F: Sync + Fn(usize),
+    {
         let (context, work) = context_and_apply_function(&work);
         unsafe {
             dispatch_apply_f(iterations, self.ptr, context, work);
@@ -185,10 +181,13 @@ impl Queue {
     /// Submits a closure to be executed on self for each element of the
     /// provided slice and waits until it completes.
     pub fn for_each<T, F>(&self, slice: &mut [T], work: F)
-            where F: Sync + Fn(&mut T), T: Send {
+    where
+        F: Sync + Fn(&mut T),
+        T: Send,
+    {
         let slice_ptr = slice.as_mut_ptr();
         let work = move |i| unsafe {
-            work(&mut *slice_ptr.offset(i as isize));
+            work(&mut *slice_ptr.add(i));
         };
         let (context, work) = context_and_apply_function(&work);
         unsafe {
@@ -199,7 +198,11 @@ impl Queue {
     /// Submits a closure to be executed on self for each element of the
     /// provided vector and returns a `Vec` of the mapped elements.
     pub fn map<T, U, F>(&self, vec: Vec<T>, work: F) -> Vec<U>
-            where F: Sync + Fn(T) -> U, T: Send, U: Send {
+    where
+        F: Sync + Fn(T) -> U,
+        T: Send,
+        U: Send,
+    {
         let mut src = vec;
         let len = src.len();
         let src_ptr = src.as_ptr();
@@ -208,8 +211,8 @@ impl Queue {
         let dest_ptr = dest.as_mut_ptr();
 
         let work = move |i| unsafe {
-            let result = work(ptr::read(src_ptr.offset(i as isize)));
-            ptr::write(dest_ptr.offset(i as isize), result);
+            let result = work(ptr::read(src_ptr.add(i)));
+            ptr::write(dest_ptr.add(i), result);
         };
         let (context, work) = context_and_apply_function(&work);
         unsafe {
@@ -234,22 +237,14 @@ impl Queue {
     /// If self is a serial queue or one of the global concurrent queues,
     /// this method behaves like the normal `sync` method.
     pub fn barrier_sync<T, F>(&self, work: F) -> T
-            where F: Send + FnOnce() -> T, T: Send {
-        let mut result = None;
-        {
-            let result_ref = &mut result;
-            let work = move || {
-                *result_ref = Some(work());
-            };
-
-            let mut work = Some(work);
-            let (context, work) = context_and_sync_function(&mut work);
-            unsafe {
-                dispatch_barrier_sync_f(self.ptr, context, work);
-            }
-        }
-        // This was set so it's safe to unwrap
-        result.unwrap()
+    where
+        F: Send + FnOnce() -> T,
+        T: Send,
+    {
+        with_context_and_sync_function(work, |context, work| unsafe {
+            dispatch_barrier_sync_f(self.ptr, context, work);
+        })
+        .unwrap()
     }
 
     /// Submits a closure to be executed on self as a barrier and returns
@@ -265,7 +260,9 @@ impl Queue {
     /// If self is a serial queue or one of the global concurrent queues,
     /// this method behaves like the normal `async` method.
     pub fn barrier_async<F>(&self, work: F)
-            where F: 'static + Send + FnOnce() {
+    where
+        F: 'static + Send + FnOnce(),
+    {
         let (context, work) = context_and_function(work);
         unsafe {
             dispatch_barrier_async_f(self.ptr, context, work);
@@ -283,8 +280,8 @@ impl Queue {
     }
 }
 
-unsafe impl Sync for Queue { }
-unsafe impl Send for Queue { }
+unsafe impl Sync for Queue {}
+unsafe impl Send for Queue {}
 
 impl Clone for Queue {
     fn clone(&self) -> Self {
@@ -314,11 +311,13 @@ impl SuspendGuard {
         unsafe {
             dispatch_suspend(queue.ptr);
         }
-        SuspendGuard { queue: queue.clone() }
+        SuspendGuard {
+            queue: queue.clone(),
+        }
     }
 
     /// Drops self, allowing the suspended `Queue` to resume.
-    pub fn resume(self) { }
+    pub fn resume(self) {}
 }
 
 impl Clone for SuspendGuard {
@@ -337,10 +336,10 @@ impl Drop for SuspendGuard {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::Group;
     use std::sync::{Arc, Mutex};
     use std::time::{Duration, Instant};
-    use crate::Group;
-    use super::*;
 
     fn async_increment(queue: &Queue, num: &Arc<Mutex<i32>>) {
         let num = num.clone();
@@ -502,5 +501,35 @@ mod tests {
         guard.resume();
         q.exec_sync(|| ());
         assert_eq!(*num.lock().unwrap(), 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "panic from exec_sync")]
+    fn test_panic_serial() {
+        let q = Queue::create("", QueueAttribute::Serial);
+
+        q.exec_sync(|| panic!("panic from exec_sync"));
+
+        panic!("exec_sync did NOT panic");
+    }
+
+    #[test]
+    #[should_panic(expected = "panic from exec_sync")]
+    fn test_panic_concurrent() {
+        let q = Queue::create("", QueueAttribute::Concurrent);
+
+        q.exec_sync(|| panic!("panic from exec_sync"));
+
+        panic!("exec_sync did NOT panic");
+    }
+
+    #[test]
+    #[should_panic(expected = "panic from barrier_sync")]
+    fn test_panic_barrier() {
+        let q = Queue::create("", QueueAttribute::Serial);
+
+        q.barrier_sync(|| panic!("panic from barrier_sync"));
+
+        panic!("barrier_sync did NOT panic");
     }
 }
