@@ -1,7 +1,7 @@
 use std::cell::UnsafeCell;
 
-use crate::context_and_sync_function;
 use crate::ffi::*;
+use crate::with_context_and_sync_function;
 
 /// A predicate used to execute a closure only once for the lifetime of an
 /// application.
@@ -34,11 +34,9 @@ impl Once {
         where
             F: FnOnce(),
         {
-            let mut work = Some(work);
-            let (context, work) = context_and_sync_function(&mut work);
-            unsafe {
+            with_context_and_sync_function(work, |context, work| unsafe {
                 dispatch_once_f(predicate, context, work);
-            }
+            });
         }
 
         unsafe {

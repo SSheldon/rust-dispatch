@@ -44,10 +44,11 @@ assert!(nums[0] == "2");
 
 #![warn(missing_docs)]
 
+use std::convert::TryFrom;
 use std::error::Error;
 use std::fmt;
-use std::mem;
 use std::os::raw::c_void;
+use std::panic::AssertUnwindSafe;
 use std::time::Duration;
 
 use crate::ffi::*;
@@ -79,68 +80,83 @@ impl fmt::Display for WaitTimeout {
 impl Error for WaitTimeout {}
 
 fn time_after_delay(delay: Duration) -> dispatch_time_t {
-    delay
-        .as_secs()
-        .checked_mul(1_000_000_000)
-        .and_then(|i| i.checked_add(delay.subsec_nanos() as u64))
-        .and_then(|i| {
-            if i < (i64::max_value() as u64) {
-                Some(i as i64)
-            } else {
-                None
-            }
-        })
-        .map_or(DISPATCH_TIME_FOREVER, |i| unsafe {
-            dispatch_time(DISPATCH_TIME_NOW, i)
-        })
+    i64::try_from(delay.as_nanos()).map_or(DISPATCH_TIME_FOREVER, |i| unsafe {
+        dispatch_time(DISPATCH_TIME_NOW, i)
+    })
 }
 
 fn context_and_function<F>(closure: F) -> (*mut c_void, dispatch_function_t)
 where
-    F: FnOnce(),
+    F: 'static + FnOnce(),
 {
-    extern "C" fn work_execute_closure<F>(context: Box<F>)
+    extern "C" fn work_execute_closure<F>(context: *mut c_void)
     where
         F: FnOnce(),
     {
-        (*context)();
+        let closure: Box<F> = unsafe { Box::from_raw(context as *mut _) };
+        if std::panic::catch_unwind(AssertUnwindSafe(closure)).is_err() {
+            // Abort to prevent unwinding across FFI
+            std::process::abort();
+        }
     }
 
     let closure = Box::new(closure);
-    let func: extern "C" fn(Box<F>) = work_execute_closure::<F>;
-    unsafe { (mem::transmute(closure), mem::transmute(func)) }
+    let func: dispatch_function_t = work_execute_closure::<F>;
+    (Box::into_raw(closure) as *mut c_void, func)
 }
 
-fn context_and_sync_function<F>(closure: &mut Option<F>) -> (*mut c_void, dispatch_function_t)
+fn with_context_and_sync_function<F, T>(
+    closure: F,
+    wrapper: impl FnOnce(*mut c_void, dispatch_function_t),
+) -> Option<T>
 where
-    F: FnOnce(),
+    F: FnOnce() -> T,
 {
-    extern "C" fn work_read_closure<F>(context: &mut Option<F>)
-    where
-        F: FnOnce(),
-    {
-        // This is always passed Some, so it's safe to unwrap
-        let closure = context.take().unwrap();
-        closure();
+    #[derive(Debug)]
+    struct SyncContext<F, T> {
+        closure: *mut F,
+        result: Option<std::thread::Result<T>>,
     }
 
-    let context: *mut Option<F> = closure;
-    let func: extern "C" fn(&mut Option<F>) = work_read_closure::<F>;
-    unsafe { (context as *mut c_void, mem::transmute(func)) }
+    extern "C" fn work_execute_closure<F, T>(context: *mut c_void)
+    where
+        F: FnOnce() -> T,
+    {
+        let sync_context: &mut SyncContext<F, T> = unsafe { &mut *(context as *mut _) };
+        let closure = unsafe { Box::from_raw(sync_context.closure) };
+        sync_context.result = Some(std::panic::catch_unwind(AssertUnwindSafe(closure)));
+    }
+
+    let mut sync_context: SyncContext<F, T> = SyncContext {
+        closure: Box::into_raw(Box::new(closure)),
+        result: None,
+    };
+    let func: dispatch_function_t = work_execute_closure::<F, T>;
+    wrapper(&mut sync_context as *mut _ as *mut c_void, func);
+
+    // If the closure panicked, resume unwinding
+    match sync_context.result.transpose() {
+        Ok(res) => res,
+        Err(unwind_payload) => std::panic::resume_unwind(unwind_payload),
+    }
 }
 
 fn context_and_apply_function<F>(closure: &F) -> (*mut c_void, extern "C" fn(*mut c_void, usize))
 where
     F: Fn(usize),
 {
-    extern "C" fn work_apply_closure<F>(context: &F, iter: usize)
+    extern "C" fn work_apply_closure<F>(context: *mut c_void, iter: usize)
     where
         F: Fn(usize),
     {
-        context(iter);
+        let context: &F = unsafe { &*(context as *const _) };
+        if std::panic::catch_unwind(AssertUnwindSafe(|| context(iter))).is_err() {
+            // Abort to prevent unwinding across FFI
+            std::process::abort();
+        }
     }
 
     let context: *const F = closure;
-    let func: extern "C" fn(&F, usize) = work_apply_closure::<F>;
-    unsafe { (context as *mut c_void, mem::transmute(func)) }
+    let func: extern "C" fn(*mut c_void, usize) = work_apply_closure::<F>;
+    (context as *mut c_void, func)
 }

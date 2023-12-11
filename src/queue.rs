@@ -6,7 +6,8 @@ use std::time::Duration;
 
 use crate::ffi::*;
 use crate::{
-    context_and_apply_function, context_and_function, context_and_sync_function, time_after_delay,
+    context_and_apply_function, context_and_function, time_after_delay,
+    with_context_and_sync_function,
 };
 
 /// The type of a dispatch queue.
@@ -134,21 +135,10 @@ impl Queue {
         F: Send + FnOnce() -> T,
         T: Send,
     {
-        let mut result = None;
-        {
-            let result_ref = &mut result;
-            let work = move || {
-                *result_ref = Some(work());
-            };
-
-            let mut work = Some(work);
-            let (context, work) = context_and_sync_function(&mut work);
-            unsafe {
-                dispatch_sync_f(self.ptr, context, work);
-            }
-        }
-        // This was set so it's safe to unwrap
-        result.unwrap()
+        with_context_and_sync_function(work, |context, work| unsafe {
+            dispatch_sync_f(self.ptr, context, work);
+        })
+        .unwrap()
     }
 
     /// Submits a closure for asynchronous execution on self and returns
@@ -197,7 +187,7 @@ impl Queue {
     {
         let slice_ptr = slice.as_mut_ptr();
         let work = move |i| unsafe {
-            work(&mut *slice_ptr.offset(i as isize));
+            work(&mut *slice_ptr.add(i));
         };
         let (context, work) = context_and_apply_function(&work);
         unsafe {
@@ -221,8 +211,8 @@ impl Queue {
         let dest_ptr = dest.as_mut_ptr();
 
         let work = move |i| unsafe {
-            let result = work(ptr::read(src_ptr.offset(i as isize)));
-            ptr::write(dest_ptr.offset(i as isize), result);
+            let result = work(ptr::read(src_ptr.add(i)));
+            ptr::write(dest_ptr.add(i), result);
         };
         let (context, work) = context_and_apply_function(&work);
         unsafe {
@@ -251,21 +241,10 @@ impl Queue {
         F: Send + FnOnce() -> T,
         T: Send,
     {
-        let mut result = None;
-        {
-            let result_ref = &mut result;
-            let work = move || {
-                *result_ref = Some(work());
-            };
-
-            let mut work = Some(work);
-            let (context, work) = context_and_sync_function(&mut work);
-            unsafe {
-                dispatch_barrier_sync_f(self.ptr, context, work);
-            }
-        }
-        // This was set so it's safe to unwrap
-        result.unwrap()
+        with_context_and_sync_function(work, |context, work| unsafe {
+            dispatch_barrier_sync_f(self.ptr, context, work);
+        })
+        .unwrap()
     }
 
     /// Submits a closure to be executed on self as a barrier and returns
@@ -522,5 +501,35 @@ mod tests {
         guard.resume();
         q.exec_sync(|| ());
         assert_eq!(*num.lock().unwrap(), 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "panic from exec_sync")]
+    fn test_panic_serial() {
+        let q = Queue::create("", QueueAttribute::Serial);
+
+        q.exec_sync(|| panic!("panic from exec_sync"));
+
+        panic!("exec_sync did NOT panic");
+    }
+
+    #[test]
+    #[should_panic(expected = "panic from exec_sync")]
+    fn test_panic_concurrent() {
+        let q = Queue::create("", QueueAttribute::Concurrent);
+
+        q.exec_sync(|| panic!("panic from exec_sync"));
+
+        panic!("exec_sync did NOT panic");
+    }
+
+    #[test]
+    #[should_panic(expected = "panic from barrier_sync")]
+    fn test_panic_barrier() {
+        let q = Queue::create("", QueueAttribute::Serial);
+
+        q.barrier_sync(|| panic!("panic from barrier_sync"));
+
+        panic!("barrier_sync did NOT panic");
     }
 }
