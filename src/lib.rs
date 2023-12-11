@@ -136,7 +136,13 @@ where
 
     // If the closure panicked, resume unwinding
     match sync_context.result.transpose() {
-        Ok(res) => res,
+        Ok(res) => {
+            if res.is_none() {
+                // if the closure didn't run (for example when using `Once`), free the box
+                std::mem::drop(unsafe { Box::from_raw(sync_context.closure) });
+            }
+            res
+        }
         Err(unwind_payload) => std::panic::resume_unwind(unwind_payload),
     }
 }
