@@ -47,6 +47,7 @@ assert!(nums[0] == "2");
 use std::convert::TryFrom;
 use std::error::Error;
 use std::fmt;
+use std::mem::ManuallyDrop;
 use std::os::raw::c_void;
 use std::panic::AssertUnwindSafe;
 use std::time::Duration;
@@ -114,7 +115,7 @@ where
 {
     #[derive(Debug)]
     struct SyncContext<F, T> {
-        closure: *mut F,
+        closure: ManuallyDrop<F>,
         result: Option<std::thread::Result<T>>,
     }
 
@@ -123,12 +124,12 @@ where
         F: FnOnce() -> T,
     {
         let sync_context: &mut SyncContext<F, T> = unsafe { &mut *(context as *mut _) };
-        let closure = unsafe { Box::from_raw(sync_context.closure) };
+        let closure = unsafe { ManuallyDrop::take(&mut sync_context.closure) };
         sync_context.result = Some(std::panic::catch_unwind(AssertUnwindSafe(closure)));
     }
 
     let mut sync_context: SyncContext<F, T> = SyncContext {
-        closure: Box::into_raw(Box::new(closure)),
+        closure: ManuallyDrop::new(closure),
         result: None,
     };
     let func: dispatch_function_t = work_execute_closure::<F, T>;
@@ -138,8 +139,8 @@ where
     match sync_context.result.transpose() {
         Ok(res) => {
             if res.is_none() {
-                // if the closure didn't run (for example when using `Once`), free the box
-                std::mem::drop(unsafe { Box::from_raw(sync_context.closure) });
+                // if the closure didn't run (for example when using `Once`), free the closure
+                unsafe { ManuallyDrop::drop(&mut sync_context.closure); };
             }
             res
         }
