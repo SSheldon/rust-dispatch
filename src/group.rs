@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use crate::ffi::*;
-use crate::{context_and_function, time_after_delay, WaitTimeout};
 use crate::queue::Queue;
+use crate::{context_and_function, time_after_delay, WaitTimeout};
 
 /// A Grand Central Dispatch group.
 ///
@@ -18,7 +18,9 @@ impl Group {
     /// Creates a new dispatch `Group`.
     pub fn create() -> Group {
         unsafe {
-            Group { ptr: dispatch_group_create() }
+            Group {
+                ptr: dispatch_group_create(),
+            }
         }
     }
 
@@ -32,7 +34,9 @@ impl Group {
     /// Submits a closure asynchronously to the given `Queue` and associates it
     /// with self.
     pub fn exec_async<F>(&self, queue: &Queue, work: F)
-            where F: 'static + Send + FnOnce() {
+    where
+        F: 'static + Send + FnOnce(),
+    {
         let (context, work) = context_and_function(work);
         unsafe {
             dispatch_group_async_f(self.ptr, queue.ptr, context, work);
@@ -43,7 +47,9 @@ impl Group {
     /// associated with self have completed.
     /// If self is empty, the closure is submitted immediately.
     pub fn notify<F>(&self, queue: &Queue, work: F)
-            where F: 'static + Send + FnOnce() {
+    where
+        F: 'static + Send + FnOnce(),
+    {
         let (context, work) = context_and_function(work);
         unsafe {
             dispatch_group_notify_f(self.ptr, queue.ptr, context, work);
@@ -52,9 +58,7 @@ impl Group {
 
     /// Waits synchronously for all tasks associated with self to complete.
     pub fn wait(&self) {
-        let result = unsafe {
-            dispatch_group_wait(self.ptr, DISPATCH_TIME_FOREVER)
-        };
+        let result = unsafe { dispatch_group_wait(self.ptr, DISPATCH_TIME_FOREVER) };
         assert!(result == 0, "Dispatch group wait errored");
     }
 
@@ -63,9 +67,7 @@ impl Group {
     /// Returns true if the tasks completed or false if the timeout elapsed.
     pub fn wait_timeout(&self, timeout: Duration) -> Result<(), WaitTimeout> {
         let when = time_after_delay(timeout);
-        let result = unsafe {
-            dispatch_group_wait(self.ptr, when)
-        };
+        let result = unsafe { dispatch_group_wait(self.ptr, when) };
         if result == 0 {
             Ok(())
         } else {
@@ -75,15 +77,13 @@ impl Group {
 
     /// Returns whether self is currently empty.
     pub fn is_empty(&self) -> bool {
-        let result = unsafe {
-            dispatch_group_wait(self.ptr, DISPATCH_TIME_NOW)
-        };
+        let result = unsafe { dispatch_group_wait(self.ptr, DISPATCH_TIME_NOW) };
         result == 0
     }
 }
 
-unsafe impl Sync for Group { }
-unsafe impl Send for Group { }
+unsafe impl Sync for Group {}
+unsafe impl Send for Group {}
 
 impl Clone for Group {
     fn clone(&self) -> Self {
@@ -113,11 +113,13 @@ impl GroupGuard {
         unsafe {
             dispatch_group_enter(group.ptr);
         }
-        GroupGuard { group: group.clone() }
+        GroupGuard {
+            group: group.clone(),
+        }
     }
 
     /// Drops self, leaving the `Group`.
-    pub fn leave(self) { }
+    pub fn leave(self) {}
 }
 
 impl Clone for GroupGuard {
@@ -136,9 +138,9 @@ impl Drop for GroupGuard {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex};
-    use crate::{Queue, QueueAttribute};
     use super::Group;
+    use crate::{Queue, QueueAttribute};
+    use std::sync::{Arc, Mutex};
 
     #[test]
     fn test_group() {

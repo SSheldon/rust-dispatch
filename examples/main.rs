@@ -1,8 +1,8 @@
 extern crate dispatch;
 
+use dispatch::{Queue, QueuePriority};
 use std::io;
 use std::process::exit;
-use dispatch::{Queue, QueuePriority};
 
 /// Prompts for a number and adds it to the given sum.
 ///
