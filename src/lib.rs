@@ -65,9 +65,9 @@ let mut timer = TimerNode::schedule(Duration::from_millis(10), Duration::from_se
     println!("Hello, counter! -> {}", *count);
 }).unwrap();
 sleep(Duration::from_millis(100));
-timer.update(Duration::from_millis(20), Duration::from_secs(0));
+timer.update(Duration::from_millis(20), Duration::from_secs(0), None); // change the time period
 sleep(Duration::from_millis(100));
-timer.cancel();
+drop(timer); // cancel the timer
 println!("Counter: {}", *count.lock().unwrap());
 assert!(*count.lock().unwrap() >= 15);
 ```

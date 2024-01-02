@@ -53,7 +53,7 @@ around a dispatch source that can be used to schedule timer events.
 method to update the timer's interval, and the `cancel` method to cancel the
 timer. Dropping a `TimerNode` will cancel the timer.
 
-```
+```rust
 use dispatch::TimerNode;
 use std::time::Duration;
 use std::thread::sleep;
@@ -67,9 +67,9 @@ let mut timer = TimerNode::schedule(Duration::from_millis(10), Duration::from_se
     println!("Hello, counter! -> {}", *count);
 }).unwrap();
 sleep(Duration::from_millis(100));
-timer.update(Duration::from_millis(20), Duration::from_secs(0));
+timer.update(Duration::from_millis(20), Duration::from_secs(0), None); // change the time period
 sleep(Duration::from_millis(100));
-timer.cancel();
+drop(timer); // cancel the timer
 println!("Counter: {}", *count.lock().unwrap());
 assert!(*count.lock().unwrap() >= 15);
 ```

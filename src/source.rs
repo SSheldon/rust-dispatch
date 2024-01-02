@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 use std::io::{Error, ErrorKind};
 use std::mem::transmute;
@@ -16,8 +15,11 @@ extern "C" fn timer_handler(arg: *mut c_void) {
 }
 
 /// A timer node.
+/// 
+/// Schedule a timer to run a block of code after a delay using `TimerNode::schedule`.
+/// Drop the timer to cancel it.
 pub struct TimerNode {
-    timer: RefCell<Option<dispatch_source_t>>,
+    timer: dispatch_source_t,
 }
 
 impl Debug for TimerNode {
@@ -64,7 +66,7 @@ impl TimerNode {
             dispatch_source_set_timer(timer, when, interval.as_nanos() as u64, leeway.as_nanos() as u64);
             dispatch_resume(timer);
         }
-        let node = TimerNode { timer: RefCell::new(Some(timer)) };
+        let node = TimerNode { timer: timer };
         Ok(node)
     }
 
@@ -73,36 +75,25 @@ impl TimerNode {
     /// # Arguments
     /// - interval: The new interval between executions of the block.
     /// - delay: The new delay before the first execution of the block.
-    pub fn update(&self, interval: Duration, delay: Duration) {
-        let timer = *self.timer.borrow();
-        match timer {
-            Some(timer) => {
-                let when = time_after_delay(delay);
-                unsafe {
-                    dispatch_suspend(timer);
-                    dispatch_source_set_timer(timer, when, interval.as_nanos() as u64, 0);
-                    dispatch_resume(timer);
-                }
-            }
-            None => {}
-        }
+    /// - leeway: The new leeway to apply to the timer.
+    pub fn update(&self, interval: Duration, delay: Duration, leeway: Option<Duration>) {
+        let when = time_after_delay(delay);
+        let leeway = leeway.unwrap_or(Duration::from_millis(0));
+        unsafe {
+            dispatch_suspend(self.timer);
+            dispatch_source_set_timer(self.timer, when, interval.as_nanos() as u64, leeway.as_nanos() as u64);
+            dispatch_resume(self.timer);
+        };
     }
 
     /// Cancel the timer.
-    pub fn cancel(&self) {
-        let mut timer = self.timer.borrow_mut();
-        match *timer {
-            Some(timer) => {
-                unsafe {
-                    let context = dispatch_get_context(timer);
-                    dispatch_source_cancel(timer);
-                    dispatch_release(timer);
-                    let _: Box<Box<dyn FnMut()>> = Box::from_raw(context as *mut _);
-                }
-            }
-            None => {}
+    fn cancel(&self) {
+        unsafe {
+            let context = dispatch_get_context(self.timer);
+            dispatch_source_cancel(self.timer);
+            dispatch_release(self.timer);
+            let _: Box<Box<dyn FnMut()>> = Box::from_raw(context as *mut _);
         }
-        *timer = None;
     }
 }
 
