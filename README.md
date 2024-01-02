@@ -42,3 +42,34 @@ assert!(nums == [2, 3]);
 let nums = queue.map(nums, |x| x.to_string());
 assert!(nums[0] == "2");
 ```
+
+# Timer Events
+
+GCD provides a timer facility that can be used to schedule blocks of code to
+execute periodically, starting after a delay. The `TimerNode` type is a wrapper
+around a dispatch source that can be used to schedule timer events.
+
+`TimerNode` has the `schedule` method to schedule a timer event, the `update`
+method to update the timer's interval, and the `cancel` method to cancel the
+timer. Dropping a `TimerNode` will cancel the timer.
+
+```rust
+use dispatch::TimerNode;
+use std::time::Duration;
+use std::thread::sleep;
+use std::sync::{Arc, Mutex};
+
+let count = Arc::new(Mutex::new(0));
+let count_clone = count.clone();
+let mut timer = TimerNode::schedule(Duration::from_millis(10), Duration::from_secs(0), None, move || {
+    let mut count = count_clone.lock().unwrap();
+    *count += 1;
+    println!("Hello, counter! -> {}", *count);
+}).unwrap();
+sleep(Duration::from_millis(100));
+timer.update(Duration::from_millis(20), Duration::from_secs(0), None); // change the time period
+sleep(Duration::from_millis(100));
+drop(timer); // cancel the timer
+println!("Counter: {}", *count.lock().unwrap());
+assert!(*count.lock().unwrap() >= 15);
+```

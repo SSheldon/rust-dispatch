@@ -11,6 +11,8 @@ pub type dispatch_function_t = extern fn(*mut c_void);
 pub type dispatch_semaphore_t = *mut dispatch_object_s;
 pub type dispatch_group_t = *mut dispatch_object_s;
 pub type dispatch_object_t = *mut dispatch_object_s;
+pub type dispatch_source_t = *mut dispatch_object_s;
+pub type dispatch_source_type_t = *const dispatch_object_s;
 pub type dispatch_once_t = c_long;
 pub type dispatch_queue_t = *mut dispatch_object_s;
 pub type dispatch_time_t = u64;
@@ -32,6 +34,16 @@ pub type dispatch_queue_attr_t = *const dispatch_object_s;
 extern {
     static _dispatch_main_q: dispatch_object_s;
     static _dispatch_queue_attr_concurrent: dispatch_object_s;
+    static _dispatch_source_type_data_add: dispatch_object_s;
+    static _dispatch_source_type_data_or: dispatch_object_s;
+    static _dispatch_source_type_mach_recv: dispatch_object_s;
+    static _dispatch_source_type_mach_send: dispatch_object_s;
+    static _dispatch_source_type_proc: dispatch_object_s;
+    static _dispatch_source_type_read: dispatch_object_s;
+    static _dispatch_source_type_signal: dispatch_object_s;
+    static _dispatch_source_type_timer: dispatch_object_s;
+    static _dispatch_source_type_vnode: dispatch_object_s;
+    static _dispatch_source_type_write: dispatch_object_s;
 
     pub fn dispatch_get_global_queue(identifier: c_long, flags: c_ulong) -> dispatch_queue_t;
     pub fn dispatch_queue_create(label: *const c_char, attr: dispatch_queue_attr_t) -> dispatch_queue_t;
@@ -76,9 +88,8 @@ extern {
     pub fn dispatch_barrier_async_f(queue: dispatch_queue_t, context: *mut c_void, work: dispatch_function_t);
     // void dispatch_barrier_sync ( dispatch_queue_t queue, dispatch_block_t block );
     pub fn dispatch_barrier_sync_f(queue: dispatch_queue_t, context: *mut c_void, work: dispatch_function_t);
-
-    // void dispatch_source_cancel ( dispatch_source_t source );
-    // dispatch_source_t dispatch_source_create ( dispatch_source_type_t type, uintptr_t handle, unsigned long mask, dispatch_queue_t queue );
+    pub fn dispatch_source_cancel(source: dispatch_source_t);
+    pub fn dispatch_source_create(type_: dispatch_source_type_t, handle: *const c_void, mask: c_ulong, queue: dispatch_queue_t) -> dispatch_object_t;
     // unsigned long dispatch_source_get_data ( dispatch_source_t source );
     // uintptr_t dispatch_source_get_handle ( dispatch_source_t source );
     // unsigned long dispatch_source_get_mask ( dispatch_source_t source );
@@ -86,10 +97,10 @@ extern {
     // void dispatch_source_set_registration_handler ( dispatch_source_t source, dispatch_block_t handler );
     // void dispatch_source_set_registration_handler_f ( dispatch_source_t source, dispatch_function_t handler );
     // void dispatch_source_set_cancel_handler ( dispatch_source_t source, dispatch_block_t handler );
-    // void dispatch_source_set_cancel_handler_f ( dispatch_source_t source, dispatch_function_t handler );
+    pub fn dispatch_source_set_cancel_handler_f(source: dispatch_source_t, handler: dispatch_function_t);
     // void dispatch_source_set_event_handler ( dispatch_source_t source, dispatch_block_t handler );
-    // void dispatch_source_set_event_handler_f ( dispatch_source_t source, dispatch_function_t handler );
-    // void dispatch_source_set_timer ( dispatch_source_t source, dispatch_time_t start, uint64_t interval, uint64_t leeway );
+    pub fn dispatch_source_set_event_handler_f(source: dispatch_source_t, handler: dispatch_function_t);
+    pub fn dispatch_source_set_timer(source: dispatch_source_t, start: dispatch_time_t, interval: u64, leeway: u64);
     // long dispatch_source_testcancel ( dispatch_source_t source );
 
     // void dispatch_read ( dispatch_fd_t fd, size_t length, dispatch_queue_t queue, void (^handler)(dispatch_data_t data, int error) );
@@ -137,6 +148,17 @@ pub fn dispatch_get_main_queue() -> dispatch_queue_t {
 
 pub const DISPATCH_QUEUE_SERIAL: dispatch_queue_attr_t = 0 as dispatch_queue_attr_t;
 pub static DISPATCH_QUEUE_CONCURRENT: &'static dispatch_object_s = unsafe { &_dispatch_queue_attr_concurrent };
+
+pub static DISPATCH_SOURCE_TYPE_DATA_ADD: &'static dispatch_object_s = unsafe { &_dispatch_source_type_data_add };
+pub static DISPATCH_SOURCE_TYPE_DATA_OR: &'static dispatch_object_s = unsafe { &_dispatch_source_type_data_or };
+pub static DISPATCH_SOURCE_TYPE_MACH_RECV: &'static dispatch_object_s = unsafe { &_dispatch_source_type_mach_recv };
+pub static DISPATCH_SOURCE_TYPE_MACH_SEND: &'static dispatch_object_s = unsafe { &_dispatch_source_type_mach_send };
+pub static DISPATCH_SOURCE_TYPE_PROC: &'static dispatch_object_s = unsafe { &_dispatch_source_type_proc };
+pub static DISPATCH_SOURCE_TYPE_READ: &'static dispatch_object_s = unsafe { &_dispatch_source_type_read };
+pub static DISPATCH_SOURCE_TYPE_SIGNAL: &'static dispatch_object_s = unsafe { &_dispatch_source_type_signal };
+pub static DISPATCH_SOURCE_TYPE_TIMER: &'static dispatch_object_s = unsafe { &_dispatch_source_type_timer };
+pub static DISPATCH_SOURCE_TYPE_VNODE: &'static dispatch_object_s = unsafe { &_dispatch_source_type_vnode };
+pub static DISPATCH_SOURCE_TYPE_WRITE: &'static dispatch_object_s = unsafe { &_dispatch_source_type_write };
 
 pub const DISPATCH_QUEUE_PRIORITY_HIGH: c_long       = 2;
 pub const DISPATCH_QUEUE_PRIORITY_DEFAULT: c_long    = 0;
